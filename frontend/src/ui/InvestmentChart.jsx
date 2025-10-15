@@ -105,6 +105,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
     historicosRelevantes.forEach(historico => {
       const fechaHistorico = new Date(historico.fecha)
       
+      
       // Calcular cantidad e importe acumulado hasta esta fecha
       let cantidadHastaFecha = 0
       let importeHastaFecha = 0
@@ -116,16 +117,19 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
         }
       })
       
+      
       // Solo agregar si hay inversiones hasta esta fecha
       if (cantidadHastaFecha > 0) {
         const valor = historico.precio * cantidadHastaFecha
         const rendimiento = valor - importeHastaFecha
+        
         
         dataPoints.push({
           fecha: fechaHistorico,
           importe: importeHastaFecha,
           valor: valor,
           rendimiento: rendimiento,
+          cantidadAcumulada: cantidadHastaFecha,
           esHistorico: true,
           esInversion: false,
           esActual: false
@@ -146,6 +150,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
         importe: totalImporte,
         valor: valorActual,
         rendimiento: rendimientoActual,
+        cantidadAcumulada: totalCantidad,
         esHistorico: false,
         esInversion: false,
         esActual: true
@@ -465,7 +470,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
                   {(() => {
                     const tooltipX = getX(chartData[hoverPoint].fecha)
                     const tooltipWidth = 200
-                    const tooltipHeight = 130
+                    const tooltipHeight = 180
                     let finalX = tooltipX + 10
                     
                     // Si está muy a la derecha, mostrarlo a la izquierda
@@ -569,10 +574,50 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
                           {formatFullValue(point.valor)}
                         </text>
                         
-                        {/* Rendimiento */}
+                        {/* Precio del valor en esa fecha */}
                         <text 
                           x={finalX + 12} 
                           y={finalY + 84} 
+                          fontSize="10" 
+                          fill="#374151"
+                        >
+                          Precio:
+                        </text>
+                        <text 
+                          x={finalX + tooltipWidth - 12} 
+                          y={finalY + 84} 
+                          fontSize="10" 
+                          fill="#111827"
+                          fontWeight="600"
+                          textAnchor="end"
+                        >
+                          {formatFullValue(point.valor / point.cantidadAcumulada || 0)}
+                        </text>
+                        
+                        {/* Cantidad acumulada */}
+                        <text 
+                          x={finalX + 12} 
+                          y={finalY + 106} 
+                          fontSize="10" 
+                          fill="#374151"
+                        >
+                          Cantidad:
+                        </text>
+                        <text 
+                          x={finalX + tooltipWidth - 12} 
+                          y={finalY + 106} 
+                          fontSize="10" 
+                          fill="#111827"
+                          fontWeight="600"
+                          textAnchor="end"
+                        >
+                          {(point.cantidadAcumulada || 0).toFixed(2)}
+                        </text>
+                        
+                        {/* Rendimiento */}
+                        <text 
+                          x={finalX + 12} 
+                          y={finalY + 128} 
                           fontSize="10" 
                           fill="#374151"
                         >
@@ -580,7 +625,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
                         </text>
                         <text 
                           x={finalX + tooltipWidth - 12} 
-                          y={finalY + 84} 
+                          y={finalY + 128} 
                           fontSize="10" 
                           fill={point.rendimiento >= 0 ? '#10b981' : '#ef4444'}
                           fontWeight="600"
@@ -592,7 +637,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
                         {/* Rentabilidad */}
                         <text 
                           x={finalX + 12} 
-                          y={finalY + 106} 
+                          y={finalY + 150} 
                           fontSize="10" 
                           fill="#374151"
                         >
@@ -600,7 +645,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
                         </text>
                         <text 
                           x={finalX + tooltipWidth - 12} 
-                          y={finalY + 106} 
+                          y={finalY + 150} 
                           fontSize="10" 
                           fill={point.rendimiento >= 0 ? '#10b981' : '#ef4444'}
                           fontWeight="600"

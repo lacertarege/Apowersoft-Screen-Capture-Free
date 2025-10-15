@@ -136,7 +136,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
 
   return (
     <div className="container">
-      <style jsx>{`
+      <style jsx="true">{`
         @keyframes spin {
           from {
             transform: rotate(0deg);
