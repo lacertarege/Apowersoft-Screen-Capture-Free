@@ -1,0 +1,52 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    environment:
+      - VITE_API=http://localhost/api
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/app/data/investments.db
+      - ALPHAVANTAGE_KEY=${ALPHAVANTAGE_KEY:-tu_clave_aqui}
+      - POLYGON_KEY=${POLYGON_KEY:-tu_clave_aqui}
+      - TZ=America/Lima
+    volumes:
+      # Usar el respaldo más reciente disponible
+      - ./backups:/app/backups:ro
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+    networks:
+      - app-network
+    # Comando para inicializar con el respaldo más reciente
+    command: >
+      sh -c "
+        if [ -f /app/data/investments.db ]; then
+          echo 'Base de datos existente encontrada'
+        else
+          echo 'Inicializando con respaldo más reciente...'
+          LATEST_BACKUP=$$(ls -t /app/backups/investments-backup-*.db 2>/dev/null | head -n1)
+          if [ -n \"$$LATEST_BACKUP\" ]; then
+            cp \"$$LATEST_BACKUP\" /app/data/investments.db
+            echo 'Respaldo restaurado: $$LATEST_BACKUP'
+          fi
+        fi
+        node src/server.js
+      "
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,0 +1,27 @@
+{
+  "name": "investing-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/db/seed.js",
+    "backup": "node src/db/backup.js",
+    "import:bvn:last-month": "node src/jobs/importYahooBvnLastMonth.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "16.4.5",
+    "express": "4.19.2",
+    "multer": "^2.0.2",
+    "node-cron": "3.0.3",
+    "p-retry": "6.2.0",
+    "p-timeout": "6.1.2",
+    "rate-limiter-flexible": "5.0.3",
+    "undici": "6.19.8",
+    "winston": "^3.11.0"
+  }
+}

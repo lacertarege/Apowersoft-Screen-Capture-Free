@@ -1,0 +1,186 @@
+.summary-label{
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.summary-value{
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* Topbar styles */
+.topbar{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--fg);
+  color: white;
+  z-index: 1000;
+  box-shadow: var(--shadow);
+}
+.topbar-content{
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+.topbar-title{
+  font-size: 1rem;
+  margin: 0;
+}
+.topbar-nav{
+  display: flex;
+  gap: 12px;
+}
+.topbar-nav a{
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.topbar-nav a:hover{
+  background: rgba(255,255,255,0.12);
+  text-decoration: none;
+}
+
+/* Navigation dropdown */
+.nav-dropdown{
+  position: relative;
+  display: inline-block;
+}
+
+.nav-dropdown-title{
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-dropdown-title:after{
+  content: '▼';
+  font-size: 0.7rem;
+  transition: transform 0.2s;
+}
+
+.nav-dropdown:hover .nav-dropdown-title{
+  background: rgba(255,255,255,0.12);
+}
+
+.nav-dropdown:hover .nav-dropdown-title:after{
+  transform: rotate(180deg);
+}
+
+.nav-dropdown-content{
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  min-width: 160px;
+  z-index: 1000;
+  display: none;
+  padding: 8px 0;
+}
+
+.nav-dropdown:hover .nav-dropdown-content{
+  display: block;
+}
+
+.nav-dropdown-content a{
+  display: block;
+  padding: 8px 16px;
+  color: var(--fg);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.nav-dropdown-content a:hover{
+  background: var(--row);
+  text-decoration: none;
+}
+
+/* Main content */
+.main-content{
+  padding: 20px 20px 20px 20px;
+  padding-top: 76px; /* space for fixed topbar */
+  transition: padding 0.2s;
+}
+
+/* Table link buttons */
+.table-link-btn{
+  background: none;
+  border: none;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+}
+
+.table-link-btn:hover{
+  color: var(--primary-700);
+}
+
+/* Action buttons in tables */
+.table-actions{
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Action buttons group */
+.btn-group{
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+/* Optional smaller buttons for icon-only */
+.btn-sm{
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+
+/* Dev-time highlight of suspicious lines starting with + or - in pre/code blocks (optional visual aid) */
+pre code .diff-add { color: #16a34a; }
+pre code .diff-del { color: #dc2626; }
+
+/* Compact modal variant (10% smaller UI) */
+.modal-content.compact{ font-size: 0.9rem; }
+.modal-content.compact input,
+.modal-content.compact select,
+.modal-content.compact textarea,
+.modal-content.compact button{ font-size: 0.9rem; padding: calc(10px * 0.9) calc(14px * 0.9); }
+.modal-content.compact .form-group label{ font-size: 0.75rem; }
+.modal-content.compact .btn{ padding: calc(10px * 0.9) calc(16px * 0.9); font-size: 0.9rem; }
+.modal-content.compact .btn-sm{ padding: calc(4px * 0.9) calc(8px * 0.9); font-size: 0.85rem; }
+
+/* Utility grid variant used in modals and forms */
+.grid-tight{ grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+@media (max-width: 520px){ .grid-tight{ grid-template-columns: 1fr; } }
+
+/* Card title spacing and typography */
+.card-title{ margin: 0 0 8px 0; font-size: 1rem; font-weight: 600; }
+
+/* Tabs simple style */
+.tabs .btn{ border-radius: 9999px; padding: 6px 12px; }
+.tabs .btn.btn-primary{ box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+/* Status dot used in RefreshModal */
+.status-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align: middle; }
+.status-dot.ok{ background:#16a34a; }
+.status-dot.error{ background:#dc2626; }
+.status-dot.loading{ background:linear-gradient(90deg,#d1d5db,#9ca3af); animation: pulse 1s infinite alternate; }
+@keyframes pulse{ from{ opacity:.6 } to{ opacity:1 } }

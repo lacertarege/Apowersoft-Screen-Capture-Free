@@ -1,0 +1,92 @@
+﻿ObjetivoConstruir una app de control de inversiones personales (acciones, ETFs, fondos mutuos, seguros) con:
+Frontend minimalista (dependencias mÃ­nimas), sidebar colapsable, dos pantallas (Empresas/Resumen y Detalle/Inversiones), y un Dashboard con grÃ¡ficos.
+Backend Node.js (Express o Fastify) con cron.
+SQLite como BD.
+Todo en Docker (docker-compose).
+Monedas soportadas: USD y PEN.
+Fuentes de datos: Polygon.io y Alpha Vantage para sÃ­mbolos, precios spot e histÃ³ricos; tipo de cambio histÃ³rico desde API (o ingreso manual).
+Un solo usuario (sin autenticaciÃ³n).
+Requisitos funcionales clave
+Pantalla Empresas (Resumen)
+Tabla â€œValoresâ€ (orden por ticker): columnas Ticker, Nombre, Moneda, Precio, Fecha, Importe, Cantidad, Balance, Rendimiento, Rentabilidad.
+PaginaciÃ³n y bÃºsqueda por ticker/nombre.
+Acciones por fila: Actualizar (modal: precio, fecha<=hoy), Eliminar (visible solo si no hay inversiones).
+BotÃ³n Crear Ticker (modal): bÃºsqueda por nombre/ticker (Polygonâ†’Alphaâ†’manual). Muestra valores de la API en campos no editables; elegir tipo_inversion (Acciones [default], ETFs, Fondos Mutuos, Seguros). Guardar crea fila.
+Totales al pie (siempre mostrar ambos):
+Total invertido en PEN y USD
+Total balance en PEN y USD
+Total rendimiento y rentabilidad en PEN y USD
+InversiÃ³n general y Balance general en USD (conversiÃ³n: PEN/TC), mÃ¡s Rendimiento y Rentabilidad generales en USD.
+Detalle de Inversiones (Hijo)
+Al pulsar en Ticker o Nombre: modal Detalle con encabezado Empresa (TICKER), Fecha precio mÃ¡s reciente, Precio.
+Tabla Detalle: Fecha (compra), Importe, Cantidad, Apertura = Importe/Cantidad (guardado), Balance = Cantidad*PrecioActual, Rendimiento = Balance - Importe, Rentabilidad = Rendimiento/Importe, Tiempo = dÃ­as desde compra (cÃ¡lculo dinÃ¡mico), Eliminar.
+Totales al pie.
+BotÃ³n Agregar InversiÃ³n: modal con Importe (2 dec), Cantidad, Apertura (autocÃ¡lculo), Fecha<=hoy, Plataforma; guardar agrega fila, actualiza totales de Detalle y de Empresas.
+Eliminar inversiÃ³n: elimina fila, actualiza totales y si ya no queda inversiÃ³n que referencie un precio puntual, puede limpiar precio histÃ³rico huÃ©rfano.
+Dashboard
+GrÃ¡fico de lÃ­nea: series InversiÃ³n y Balance en USD.
+Filtros: 1w, 1m, 3m, 6m, 1y, ytd, all.
+GrÃ¡fico de barras: rendimiento por perÃ­odo.
+Pastel/barras: distribuciÃ³n por empresa y por tipo de inversiÃ³n.
+ConfiguraciÃ³n (CRUD)
+Tipos de inversiÃ³n: agregar nuevos, no eliminar, permitir activo=false.
+Tipo de cambio: CRUD manual; ademÃ¡s, job/API para TC histÃ³rico.
+Plataformas (opcional): catÃ¡logo editable.
+Reglas de negocio acordadas
+Tipo de cambio desde API y guardado en tabla; soportar ingreso manual de respaldo. Solo USD y PEN.
+HistÃ³ricos de precios: guardar solo desde el dÃ­a siguiente a la primera compra por ticker.
+ActualizaciÃ³n de precio: si API entrega valor distinto para (ticker,fecha), actualizar (mantener fuente_api, updated_at).
+EliminaciÃ³n de ticker: bloqueada si existen inversiones.
+CÃ¡lculo Tiempo: dinÃ¡mico al consultar.
+Importe neto: comisiones ya incluidas en el importe ingresado por usuario.
+Mostrar siempre totales en PEN y USD en la pantalla Empresas.
+Apertura se guarda como dato fijo.
+Arquitectura y contenedores
+docker-compose.yml con servicios frontend, backend, db (SQLite vÃ­a volumen).
+Backend expuesto solo a la red interna; frontend consume backend.
+Env vars (backend): ALPHAVANTAGE_KEY, POLYGON_KEY, TZ=America/Lima.
+Backend (Node.js)
+Framework: Fastify o Express.
+Capas: routes, services (negocio), adapters (APIs externas), db (migraciones/queries), jobs (cron 20:00).
+Ratelimiting, exponentialbackoff, circuit breaker por fuente, cache en memoria 5â€“15 min para lecturas.
+Upsert para precios_historicos (ticker_id, fecha) y tipos_cambio(fecha).
+PRAGMA foreign_keys=ON; journal_mode=WAL al iniciar.
+Endpoints (mÃ­nimo):
+Tickers: GET /tickers, POST /tickers, PATCH /tickers/:id/precio, DELETE /tickers/:id, GET /tickers/:id, GET /tickers/:id/inversiones, POST /tickers/:id/inversiones
+Inversiones: DELETE /inversiones/:id
+BÃºsqueda sÃ­mbolos: GET /search/symbols?q=
+HistÃ³ricos: GET /historicos/:id?from=
+Dashboard: GET /dashboard/series?range=
+Config: GET/POST /config/tipos-inversion, GET/POST /config/tipo-cambio
+Modelo de datos (SQLite)
+tipos_inversion(id, nombre, activo)
+tickers(id, ticker UPPER, nombre, moneda CHECK(USD/PEN), tipo_inversion_id FK, estado) UNIQUE(ticker)
+inversiones(id, ticker_id FK, fecha, importe NUMERIC(14,2), cantidad NUMERIC(14,6), apertura_guardadaNUMERIC(14,6), plataforma TEXT)
+precios_historicos(id, ticker_id FK, fecha, precio NUMERIC(14,6), fuente_api TEXT, updated_at DATETIME, UNIQUE(ticker_id, fecha))
+tipos_cambio(id, fecha, usd_penNUMERIC(14,6), fuente_api TEXT, UNIQUE(fecha))
+Ãndices: (ticker_id, fecha) en inversiones y precios.
+Vista v_resumen_empresas con agregados y cÃ¡lculos (importe_total, cantidad_total, precio_reciente, balance, rendimiento, rentabilidad).
+Frontend (minimaldeps)
+Framework sugerido: React + Vite (o SvelteKit si prefieren aÃºn menos peso).
+Componentes:
+Sidebar colapsable (overlay en mÃ³vil).
+Tabla Empresas con paginaciÃ³n, bÃºsqueda, orden por ticker.
+Modales: Crear Ticker, Actualizar Precio, Agregar InversiÃ³n (validaciones: >0, fechas â‰¤ hoy; confirmaciÃ³n si cambio >10%).
+Dashboard con charts (Recharts o chart.js).
+Accesibilidad: role="dialog", aria-modal, trap de foco, Enter/Esc.
+Colores de rendimiento: verde/rojo + Ã­conos â–²/â–¼ y aria-label.
+Flujos clave
+Crear ticker â†’ buscar (Polygonâ†’Alphaâ†’manual) â†’ guardar â†’ fila en Empresas â†’ si ya hay inversiones luego, iniciar backfill histÃ³rico desde dÃ­a siguiente a la primera compra.
+Agregar inversiÃ³n â†’ guardar apertura â†’ actualizar totales y vista Empresas al instante (optimista) â†’ triggerfetch/update precio si falta el de hoy.
+Eliminar inversiÃ³n â†’ actualizar totales; si deja huÃ©rfano un precio especÃ­fico y ya no lo usa nadie, limpieza opcional.
+Cron 20:00 â†’ actualizar precios de hoy, cerrar huecos, recalcular agregados (o invalidar cachÃ©).
+Calidad y pruebas
+Unittests para servicios (cÃ¡lculos, upserts, conversiÃ³n PENâ†”USD).
+Tests de contrato para endpoints (Supertest).
+Fixture/seed con 3â€“5 tickers y data mÃ­nima.
+Entrega
+docker-compose up -d levanta todo.
+Scripts: npm run migrate, npm run seed, npm run backup.
+Documentar .env.example con claves API.
+
+
