@@ -37,9 +37,9 @@ export function dashboardRouter(db) {
           const hoy = getLimaDate()
           const inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
           const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
-          
-          const invMap = {}; inversiones.forEach(i => { if(!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if(!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = {imp:0, q:0}; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
-          const preMap = {}; precios.forEach(p => { if(!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
+
+          const invMap = {}; inversiones.forEach(i => { if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0 }; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
+          const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
 
           let curr = new Date(from + 'T00:00:00Z')
           const stats = {}; tickerIds.forEach(id => {
@@ -52,7 +52,7 @@ export function dashboardRouter(db) {
             const dStr = curr.toISOString().slice(0, 10); if (dStr > hoy) break
             let invDia = 0, balDia = 0
             tickerIds.forEach(id => {
-              const s = stats[id]; const d = invMap[id]?.[dStr]; if(d) { s.imp += d.imp; s.q += d.q; }
+              const s = stats[id]; const d = invMap[id]?.[dStr]; if (d) { s.imp += d.imp; s.q += d.q; }
               const p = preMap[id]?.[dStr] || s.lp; s.lp = p;
               invDia += s.imp; balDia += s.q * p
             })
@@ -112,9 +112,9 @@ export function dashboardRouter(db) {
       const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
       const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
 
-      const invMap = {}; inversiones.forEach(i => { if(!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if(!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = {imp:0, q:0}; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
-      const preMap = {}; precios.forEach(p => { if(!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
-      const divMap = {}; dividendos.forEach(d => { if(!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
+      const invMap = {}; inversiones.forEach(i => { if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0 }; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
+      const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
+      const divMap = {}; dividendos.forEach(d => { if (!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
 
       let curr = new Date(from + 'T00:00:00Z')
       const stats = {}; tickerIds.forEach(id => {
@@ -129,13 +129,13 @@ export function dashboardRouter(db) {
         if (dStr.endsWith('-01-01')) Rna = 0
         let ViT = 0, FT = 0, VfT = 0, RmT = 0
         tickerIds.forEach(id => {
-          const s = stats[id]; const inv = invMap[id]?.[dStr] || {imp:0, q:0}; const div = divMap[id]?.[dStr] || 0
+          const s = stats[id]; const inv = invMap[id]?.[dStr] || { imp: 0, q: 0 }; const div = divMap[id]?.[dStr] || 0
           const Vi = s.lv, F = inv.imp; ViT += Vi; FT += F; s.q += inv.q;
           const p = preMap[id]?.[dStr] || s.lp; s.lp = p; const Vf = s.q * p; VfT += Vf;
           RmT += (Vf - (Vi + F)) + div; s.lv = Vf;
         })
         let Rn = (ViT + FT) > 0 ? RmT / (ViT + FT) : 0; Rna += Rn;
-        items.push({ fecha: dStr, inversionUsd: Number((ViT+FT).toFixed(2)), valorActualUsd: Number(VfT.toFixed(2)), rentabilidadPorcentaje: Number((Rna*100).toFixed(2)) })
+        items.push({ fecha: dStr, inversionUsd: Number((ViT + FT).toFixed(2)), valorActualUsd: Number(VfT.toFixed(2)), rentabilidadPorcentaje: Number((Rna * 100).toFixed(2)) })
         curr.setUTCDate(curr.getUTCDate() + 1)
       }
       res.json({ items })
@@ -156,9 +156,9 @@ export function dashboardRouter(db) {
       const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
       const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
 
-      const invMap = {}; inversiones.forEach(i => { if(!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if(!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = {imp:0, q:0}; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
-      const preMap = {}; precios.forEach(p => { if(!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
-      const divMap = {}; dividendos.forEach(d => { if(!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
+      const invMap = {}; inversiones.forEach(i => { if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0 }; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
+      const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
+      const divMap = {}; dividendos.forEach(d => { if (!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
 
       let curr = new Date(start + 'T00:00:00Z')
       const stats = {}; tickerIds.forEach(id => { stats[id] = { q: 0, lv: 0, lp: 0 } })
@@ -168,13 +168,13 @@ export function dashboardRouter(db) {
         if (dStr.endsWith('-01-01')) Rna = 0
         let ViT = 0, FT = 0, VfT = 0, RmT = 0
         tickerIds.forEach(id => {
-          const s = stats[id]; const inv = invMap[id]?.[dStr] || {imp:0, q:0}; const div = divMap[id]?.[dStr] || 0
+          const s = stats[id]; const inv = invMap[id]?.[dStr] || { imp: 0, q: 0 }; const div = divMap[id]?.[dStr] || 0
           const Vi = s.lv, F = inv.imp; ViT += Vi; FT += F; s.q += inv.q;
           const p = preMap[id]?.[dStr] || s.lp; s.lp = p; const Vf = s.q * p; VfT += Vf;
           RmT += (Vf - (Vi + F)) + div; s.lv = Vf;
         })
         let Rn = (ViT + FT) > 0 ? RmT / (ViT + FT) : 0; Rna += Rn;
-        result.push({ fecha: dStr, valorInicial: ViT, aportes: FT, valorFinal: VfT, rendimiento: RmT, rentabilidad: Rn*100, rentabilidadAcumulada: Rna*100 })
+        result.push({ fecha: dStr, valorInicial: ViT, aportes: FT, valorFinal: VfT, rendimiento: RmT, rentabilidad: Rn * 100, rentabilidadAcumulada: Rna * 100 })
         curr.setUTCDate(curr.getUTCDate() + 1)
       }
       res.json({ items: result })
@@ -195,9 +195,9 @@ export function dashboardRouter(db) {
       const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
       const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
 
-      const invMap = {}; inversiones.forEach(i => { if(!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if(!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = {imp:0, q:0}; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
-      const preMap = {}; precios.forEach(p => { if(!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
-      const divMap = {}; dividendos.forEach(d => { if(!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
+      const invMap = {}; inversiones.forEach(i => { if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0 }; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
+      const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
+      const divMap = {}; dividendos.forEach(d => { if (!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
 
       let curr = new Date(start + 'T00:00:00Z')
       const stats = {}; tickerIds.forEach(id => { stats[id] = { q: 0, lv: 0, lp: 0 } })
@@ -208,7 +208,7 @@ export function dashboardRouter(db) {
         if (dStr.endsWith('-01-01')) Rna = 0
         let ViT = 0, FT = 0, VfT = 0, RmT = 0
         tickerIds.forEach(id => {
-          const s = stats[id]; const inv = invMap[id]?.[dStr] || {imp:0, q:0}; const div = divMap[id]?.[dStr] || 0
+          const s = stats[id]; const inv = invMap[id]?.[dStr] || { imp: 0, q: 0 }; const div = divMap[id]?.[dStr] || 0
           const Vi = s.lv, F = inv.imp; ViT += Vi; FT += F; s.q += inv.q;
           const p = preMap[id]?.[dStr] || s.lp; s.lp = p; const Vf = s.q * p; VfT += Vf;
           RmT += (Vf - (Vi + F)) + div; s.lv = Vf;
@@ -227,34 +227,129 @@ export function dashboardRouter(db) {
   r.get('/evolution-annual', async (req, res) => {
     try {
       const { fetchDailyHistory } = await import('../sources/marketData.js')
+
+      // 1. Get latest FX rate for PEN conversion
       const latestFx = db.prepare('SELECT usd_pen FROM tipos_cambio ORDER BY fecha DESC LIMIT 1').get()
       const fxRate = latestFx ? Number(latestFx.usd_pen) : 3.7
-      const allInv = db.prepare('SELECT i.fecha, i.importe, i.cantidad, t.moneda, t.id FROM inversiones i JOIN tickers t ON i.ticker_id = t.id ORDER BY i.fecha ASC').all()
-      if (allInv.length === 0) return res.json({ items: [] })
-      
-      const yrStart = parseInt(allInv[0].fecha.split('-')[0])
-      const yrEnd = parseInt(getLimaDate().split('-')[0])
-      const tickerIds = [...new Set(allInv.map(i => i.id))]
+
+      // 2. Get all tickers (USD and PEN) with investments
+      const tickers = db.prepare(`
+        SELECT DISTINCT t.id, t.moneda 
+        FROM tickers t 
+        INNER JOIN inversiones i ON i.ticker_id = t.id
+      `).all()
+
+      if (tickers.length === 0) return res.json({ items: [] })
+      const tickerIds = tickers.map(t => t.id)
+
+      // 3. Get first investment date and calculate year range
+      const firstInv = db.prepare(`SELECT MIN(fecha) as f FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')})`).get()
+      const start = firstInv.f
+      const hoy = getLimaDate()
+      const yearStart = parseInt(start.split('-')[0])
+      const yearEnd = parseInt(hoy.split('-')[0])
+
+      // 4. Get all data (inversiones, precios, dividendos)
+      const inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
+      const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
+      const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
+
+      // 5. Build maps
+      const invMap = {}; inversiones.forEach(i => { if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0 }; invMap[i.ticker_id][i.fecha].imp += Number(i.importe); invMap[i.ticker_id][i.fecha].q += Number(i.cantidad); })
+      const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
+      const divMap = {}; dividendos.forEach(d => { if (!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
+
+      // 6. Get ticker currency map
+      const tickerCurrency = {}
+      tickers.forEach(t => { tickerCurrency[t.id] = t.moneda })
+
+      // 7. Calculate daily evolution (consolidated in USD)
+      let curr = new Date(start + 'T00:00:00Z')
+      const stats = {}; tickerIds.forEach(id => { stats[id] = { q: 0, lv: 0, lp: 0 } })
+
+      const dailyEvolution = [] // {fecha, Vi, F, Vf, Rm}
+      while (true) {
+        const dStr = curr.toISOString().slice(0, 10); if (dStr > hoy) break
+        let ViT = 0, FT = 0, VfT = 0, RmT = 0
+
+        tickerIds.forEach(id => {
+          const s = stats[id]; const inv = invMap[id]?.[dStr] || { imp: 0, q: 0 }; const div = divMap[id]?.[dStr] || 0
+          const moneda = tickerCurrency[id]
+
+          // Convert to USD if needed
+          const fxToUse = moneda === 'PEN' ? fxRate : 1
+
+          const Vi = s.lv / fxToUse
+          const F = inv.imp / fxToUse
+          ViT += Vi; FT += F; s.q += inv.q;
+
+          const p = preMap[id]?.[dStr] || s.lp; s.lp = p;
+          const Vf = (s.q * p) / fxToUse
+          VfT += Vf;
+
+          const divUSD = div / fxToUse
+          RmT += (Vf - (Vi + F)) + divUSD
+          s.lv = s.q * p
+        })
+
+        dailyEvolution.push({ fecha: dStr, Vi: ViT, F: FT, Vf: VfT, Rm: RmT })
+        curr.setUTCDate(curr.getUTCDate() + 1)
+      }
+
+      // 8. Aggregate by year
+      const yearlyAggregates = {}
+      dailyEvolution.forEach(d => {
+        const year = parseInt(d.fecha.split('-')[0])
+        if (!yearlyAggregates[year]) {
+          yearlyAggregates[year] = { year, firstDayVi: null, totalF: 0, lastDayVf: 0, totalRm: 0, lastDate: d.fecha }
+        }
+        const agg = yearlyAggregates[year]
+
+        // Vi: First day of the year
+        if (d.fecha.endsWith('-01-01')) {
+          agg.firstDayVi = d.Vi
+        }
+
+        // Sum F and Rm for the entire year
+        agg.totalF += d.F
+        agg.totalRm += d.Rm
+
+        // Vf: Last day (will be overwritten until the last day of the year)
+        if (d.fecha >= agg.lastDate) {
+          agg.lastDayVf = d.Vf
+          agg.lastDate = d.fecha
+        }
+      })
+
+      // 9. Build results with benchmarks
       const results = []
+      for (let y = yearStart; y <= yearEnd; y++) {
+        const agg = yearlyAggregates[y]
+        if (!agg) continue
 
-      for (let y = yrStart; y <= yrEnd; y++) {
-        const fIni = `${y}-01-01`, fFin = `${y}-12-31`, fRealFin = getLimaDate() < fFin ? getLimaDate() : fFin
-        let Vi = y > yrStart ? calculateBalanceAtDate(db, tickerIds, `${y-1}-12-31`, fxRate) : 0
-        const F = allInv.filter(i => i.fecha.startsWith(y.toString())).reduce((s, i) => s + (i.moneda === 'USD' ? Number(i.importe) : Number(i.importe)/fxRate), 0)
-        const Vf = calculateBalanceAtDate(db, tickerIds, fRealFin, fxRate)
-        const Rm = Vf - Vi, Rn = Vi > 0 ? (Rm / Vi) * 100 : (F > 0 ? ((Vf - F) / F) * 100 : 0)
+        const Vi = agg.firstDayVi || 0
+        const F = agg.totalF
+        const Vf = agg.lastDayVf
+        const Rm = agg.totalRm
+        const Rn = (Vi + F) > 0 ? (Rm / (Vi + F)) * 100 : 0
 
-        const item = { año: y, valorInicial: Vi, aportes: F, valorFinal: Vf, rendimiento: Rm, rentabilidad: Rn, benchmarks: {} }
-        const bms = [{k:'sp500', t:'SPY'}, {k:'dowjones', t:'DIA'}, {k:'nasdaq', t:'QQQ'}]
+        const fIni = `${y}-01-01`
+        const fRealFin = agg.lastDate
+
+        const item = { año: y, valorInicial: Number(Vi.toFixed(2)), aportes: Number(F.toFixed(2)), valorFinal: Number(Vf.toFixed(2)), rendimiento: Number(Rm.toFixed(2)), rentabilidad: Number(Rn.toFixed(2)), benchmarks: {} }
+
+        // Calculate benchmarks
+        const bms = [{ k: 'sp500', t: 'SPY' }, { k: 'dowjones', t: 'DIA' }, { k: 'nasdaq', t: 'QQQ' }]
         for (const b of bms) {
           try {
             const pI = await getPriceNearDate(fetchDailyHistory, b.t, fIni, 'after')
             const pF = await getPriceNearDate(fetchDailyHistory, b.t, fRealFin, 'before')
-            if (pI && pF) item.benchmarks[b.k] = ((pF / pI) - 1) * 100
-          } catch {}
+            if (pI && pF) item.benchmarks[b.k] = Number((((pF / pI) - 1) * 100).toFixed(2))
+          } catch { }
         }
         results.push(item)
       }
+
       res.json({ items: results.reverse() })
     } catch (e) { res.status(500).json({ error: e.message }) }
   })
@@ -272,9 +367,9 @@ export function dashboardRouter(db) {
 
 async function getPriceNearDate(fetch, t, d, dir) {
   const e = await fetch(t, d, d); if (e?.items?.length > 0) return e.items[0].precio
-  const dt = new Date(d); let s, fl; if (dir === 'before') { fl = d; dt.setDate(dt.getDate() - 15); s = dt.toISOString().slice(0, 10); } 
+  const dt = new Date(d); let s, fl; if (dir === 'before') { fl = d; dt.setDate(dt.getDate() - 15); s = dt.toISOString().slice(0, 10); }
   else { s = d; dt.setDate(dt.getDate() + 15); fl = dt.toISOString().slice(0, 10); }
-  const r = await fetch(t, s, fl); if (r?.items?.length > 0) return dir === 'before' ? r.items[r.items.length-1].precio : r.items[0].precio
+  const r = await fetch(t, s, fl); if (r?.items?.length > 0) return dir === 'before' ? r.items[r.items.length - 1].precio : r.items[0].precio
   return null
 }
 

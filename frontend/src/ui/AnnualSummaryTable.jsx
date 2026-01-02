@@ -81,7 +81,7 @@ export default function AnnualSummaryTable({ data }) {
                             <td style={{ ...cellRightStyle, color: getColorForValue(item.rendimiento), fontWeight: '600' }}>
                                 {formatCurrency(item.rendimiento)}
                             </td>
-                            <td style={{ ...cellRightStyle, color: getColorForValue(item.rentability), fontWeight: '700', backgroundColor: 'rgba(16, 185, 129, 0.03)' }}>
+                            <td style={{ ...cellRightStyle, color: getColorForValue(item.rentabilidad), fontWeight: '700', backgroundColor: 'rgba(16, 185, 129, 0.03)' }}>
                                 {formatPercentage(item.rentabilidad)}
                             </td>
                             <td style={{ ...cellRightStyle, color: getColorForValue(item.benchmarks.sp500), borderLeft: '1px solid #f1f5f9' }}>
