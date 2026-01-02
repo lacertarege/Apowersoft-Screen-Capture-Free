@@ -8,6 +8,7 @@ export function TickerRow({
   onInvest, 
   onEdit, 
   onDetail,
+  onShowEvolucion,
   refreshing = false 
 }) {
   const cellStyle = { padding: '8px 6px', whiteSpace: 'nowrap' }
@@ -32,6 +33,29 @@ export function TickerRow({
           </button>
       </td>
       <td style={{...cellStyle, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px'}} title={ticker.nombre}>{ticker.nombre}</td>
+      
+      <td style={{ ...cellStyle, textAlign: 'left' }}>
+        <button
+          onClick={() => onEdit?.(ticker)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--fg-secondary)',
+            padding: '4px 8px',
+            cursor: 'pointer',
+            borderRadius: '4px',
+            fontSize: '12px',
+            textAlign: 'left',
+            width: '100%',
+            transition: 'background-color 0.2s'
+          }}
+          onMouseOver={(e) => e.target.style.backgroundColor = 'var(--bg-hover)'}
+          onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+          title="Click para editar tipo"
+        >
+          {ticker.tipo_inversion_nombre || '-'}
+        </button>
+      </td>
       
       <td style={{ ...cellStyle, textAlign: 'right' }}>
         {ticker.precio_reciente != null ? fmtCurr(ticker.precio_reciente, ticker.moneda) : '-'}
@@ -70,6 +94,23 @@ export function TickerRow({
         color: (ticker.rentabilidad || 0) > 0 ? 'green' : ((ticker.rentabilidad || 0) < 0 ? 'red' : 'inherit')
       }}>
         {fmtPct(ticker.rentabilidad || 0)}
+      </td>
+      <td style={{ ...cellStyle, textAlign: 'center' }}>
+        <button
+          onClick={() => onShowEvolucion?.(ticker)}
+          className="btn btn-sm"
+          style={{
+            padding: '4px 8px',
+            fontSize: '11px',
+            backgroundColor: '#f3f4f6',
+            border: '1px solid #d1d5db',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+          title="Ver evolución diaria"
+        >
+          Evolución
+        </button>
       </td>
     </tr>
   )

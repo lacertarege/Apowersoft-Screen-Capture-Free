@@ -1,4 +1,4 @@
-export const API = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API) ? import.meta.env.VITE_API : 'http://localhost:3001'
+export const API = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API) ? import.meta.env.VITE_API : 'http://localhost:3002'
 
 // Función para verificar la conexión con el backend
 export async function checkBackendConnection() {

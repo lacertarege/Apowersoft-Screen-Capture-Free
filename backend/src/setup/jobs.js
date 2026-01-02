@@ -1,15 +1,19 @@
 import cron from 'node-cron'
 import { updateDailyPricesJob } from '../jobs/updateDailyPrices.js'
 import { backfillFxJob } from '../jobs/backfillFx.js'
+import { updatePortfolioEvolutionJob } from '../jobs/updatePortfolioEvolution.js'
 import { spawn } from 'node:child_process'
+import { getLimaDate } from '../utils/date.js'
 
-export function startJobs(db){
+export function startJobs(db) {
   // 20:00 Lima time (system TZ provided as TZ env var in docker-compose)
   cron.schedule('0 20 * * *', async () => {
     try {
       await updateDailyPricesJob(db)
       await backfillFxJob(db, false)
-      console.log('Cron 20:00 executed: precios diarios y FX últimos días')
+      // Actualizar evolución del portafolio después de actualizar precios y tipos de cambio
+      await updatePortfolioEvolutionJob(db, false)
+      console.log('Cron 20:00 executed: precios diarios, FX últimos días y evolución del portafolio')
     } catch (e) {
       console.error('Cron 20:00 error', e)
     }
@@ -18,8 +22,10 @@ export function startJobs(db){
   // 06:00 Lima time: actualizar tipo de cambio del día anterior
   cron.schedule('0 6 * * *', async () => {
     try {
-      const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1)
-      const d = yesterday.toISOString().slice(0,10)
+      const hoy = getLimaDate()
+      const yesterdayObj = new Date(hoy)
+      yesterdayObj.setUTCDate(yesterdayObj.getUTCDate() - 1)
+      const d = yesterdayObj.toISOString().slice(0, 10)
       await backfillFxJob(db, false) // asegura últimos días incluido ayer
       console.log('Cron 06:00 executed: tipo de cambio día anterior')
     } catch (e) {
@@ -45,7 +51,7 @@ export function startJobs(db){
         stdio: 'inherit',
         shell: true
       })
-      
+
       backupProcess.on('exit', (code) => {
         if (code === 0) {
           console.log('Cron 01:00 executed: backup diario completado')

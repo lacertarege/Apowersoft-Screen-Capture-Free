@@ -57,6 +57,66 @@ export function configRouter(db){
     }
   })
 
+  // Importación masiva de tipos de cambio desde CSV (debe ir antes de /tipo-cambio)
+  r.post('/tipo-cambio/bulk', (req,res)=>{
+    try {
+      const { items, fuente_api='csv' } = req.body
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({error:'items debe ser un array no vacío'})
+      }
+
+      const stmt = db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
+        ON CONFLICT(fecha) DO UPDATE SET usd_pen=excluded.usd_pen, fuente_api=excluded.fuente_api`)
+      
+      let inserted = 0
+      let updated = 0
+      let errors = []
+
+      for (const item of items) {
+        const { fecha, usd_pen } = item
+        if (!fecha || usd_pen == null) {
+          errors.push({ item, error: `Fecha o precio faltante. Fecha: "${fecha || 'vacía'}", Precio: "${usd_pen || 'vacío'}"` })
+          continue
+        }
+        
+        // Validar formato de fecha YYYY-MM-DD
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+          errors.push({ item, error: `Formato de fecha inválido: "${fecha}". Debe ser YYYY-MM-DD` })
+          continue
+        }
+        
+        const usdPenNum = Number(usd_pen)
+        if (!isFinite(usdPenNum) || usdPenNum <= 0) {
+          errors.push({ item, error: `Precio inválido: "${usd_pen}". Debe ser un número positivo` })
+          continue
+        }
+
+        try {
+          const existing = db.prepare('SELECT fecha FROM tipos_cambio WHERE fecha = ?').get(fecha)
+          stmt.run(fecha, usdPenNum, fuente_api)
+          if (existing) {
+            updated++
+          } else {
+            inserted++
+          }
+        } catch (e) {
+          errors.push({ item, error: `Error de base de datos: ${e.message}` })
+        }
+      }
+
+      res.json({ 
+        ok: true, 
+        inserted, 
+        updated, 
+        total: items.length,
+        errors: errors.length > 0 ? errors : undefined
+      })
+    } catch (e) {
+      console.error('POST /config/tipo-cambio/bulk error', e)
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // Upsert de tipo de cambio (manual o desde API)
   r.post('/tipo-cambio', (req,res)=>{
     const { fecha, usd_pen, fuente_api='manual' } = req.body

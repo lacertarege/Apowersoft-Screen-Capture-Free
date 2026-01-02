@@ -1,17 +1,88 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { API } from './config'
 
 export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
   const [importe, setImporte] = useState('')
   const [cantidad, setCantidad] = useState('')
   const [fecha, setFecha] = useState('')
   const [plataforma, setPlataforma] = useState('Trii')
+  const [precioHistorico, setPrecioHistorico] = useState(null)
+  const [buscandoPrecio, setBuscandoPrecio] = useState(false)
+  const [cantidadAutoCalculada, setCantidadAutoCalculada] = useState(false)
 
   useEffect(()=>{
     if (open){
       const hoy = new Date().toISOString().split('T')[0]
       setFecha(hoy); setImporte(''); setCantidad(''); setPlataforma('Trii')
+      setPrecioHistorico(null)
+      setCantidadAutoCalculada(false)
     }
   }, [open])
+
+  // Buscar precio histórico cuando cambie la fecha o el importe
+  useEffect(() => {
+    if (!open || !empresa?.id || !fecha || !importe) {
+      setPrecioHistorico(null)
+      if (cantidadAutoCalculada) {
+        setCantidad('')
+        setCantidadAutoCalculada(false)
+      }
+      return
+    }
+
+    const importeNum = Number(importe)
+    if (!isFinite(importeNum) || importeNum <= 0) {
+      setPrecioHistorico(null)
+      if (cantidadAutoCalculada) {
+        setCantidad('')
+        setCantidadAutoCalculada(false)
+      }
+      return
+    }
+
+    // Buscar precio histórico para la fecha
+    const buscarPrecio = async () => {
+      setBuscandoPrecio(true)
+      try {
+        // Obtener precios históricos desde la fecha hacia atrás
+        const response = await fetch(`${API}/historicos/${empresa.id}?from=${fecha}`)
+        if (response.ok) {
+          const data = await response.json()
+          const items = data.items || []
+          // Buscar precio exacto para la fecha
+          const precioExacto = items.find(p => p.fecha === fecha)
+          if (precioExacto && precioExacto.precio) {
+            const precio = Number(precioExacto.precio)
+            if (isFinite(precio) && precio > 0) {
+              setPrecioHistorico(precio)
+              // Calcular cantidad automáticamente
+              const cantidadCalculada = importeNum / precio
+              setCantidad(cantidadCalculada.toFixed(6).replace(/\.?0+$/, ''))
+              setCantidadAutoCalculada(true)
+              return
+            }
+          }
+        }
+        // Si no hay precio para esa fecha, limpiar
+        setPrecioHistorico(null)
+        if (cantidadAutoCalculada) {
+          setCantidad('')
+          setCantidadAutoCalculada(false)
+        }
+      } catch (error) {
+        console.error('Error buscando precio histórico:', error)
+        setPrecioHistorico(null)
+        if (cantidadAutoCalculada) {
+          setCantidad('')
+          setCantidadAutoCalculada(false)
+        }
+      } finally {
+        setBuscandoPrecio(false)
+      }
+    }
+
+    buscarPrecio()
+  }, [fecha, importe, empresa?.id, open, cantidadAutoCalculada])
 
   const apertura = useMemo(()=>{
     const imp = Number(importe); const cant = Number(cantidad)
@@ -101,15 +172,55 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
                 />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Cantidad</label>
+                <label>
+                  Cantidad
+                  {precioHistorico && (
+                    <span style={{ 
+                      fontSize: '11px', 
+                      color: 'var(--fg-secondary)', 
+                      fontWeight: 'normal',
+                      marginLeft: '6px'
+                    }}>
+                      (auto)
+                    </span>
+                  )}
+                </label>
                 <input 
                   value={cantidad} 
-                  onChange={e=>setCantidad(e.target.value)} 
+                  onChange={e=>{
+                    setCantidad(e.target.value)
+                    setCantidadAutoCalculada(false)
+                  }} 
                   type="number" 
                   min="0" 
                   step="0.0001"
                   placeholder="0.00"
+                  disabled={buscandoPrecio}
+                  style={{
+                    backgroundColor: cantidadAutoCalculada ? 'var(--bg)' : undefined
+                  }}
                 />
+                {buscandoPrecio && (
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: 'var(--fg-secondary)', 
+                    marginTop: '4px' 
+                  }}>
+                    Buscando precio histórico...
+                  </div>
+                )}
+                {precioHistorico && !buscandoPrecio && (
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: 'var(--fg-secondary)', 
+                    marginTop: '4px' 
+                  }}>
+                    Precio: {new Intl.NumberFormat('es-PE', {
+                      style: 'currency',
+                      currency: empresa?.moneda || 'USD'
+                    }).format(precioHistorico)}
+                  </div>
+                )}
               </div>
             </div>
 

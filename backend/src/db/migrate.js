@@ -121,4 +121,15 @@ export default async function migrate(db){
 
   // Agregar restricción única para evitar duplicados en inversiones
   db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inversiones_unique ON inversiones(ticker_id, fecha, importe, cantidad, plataforma)`).run()
+
+  // Tabla para almacenar la evolución día a día del portafolio
+  db.prepare(`CREATE TABLE IF NOT EXISTS portfolio_evolucion_diaria (
+    fecha TEXT NOT NULL PRIMARY KEY,
+    inversion_usd NUMERIC(14,2) NOT NULL DEFAULT 0,
+    balance_usd NUMERIC(14,2) NOT NULL DEFAULT 0,
+    rendimiento_usd NUMERIC(14,2) NOT NULL DEFAULT 0,
+    rentabilidad_porcentaje NUMERIC(8,4) NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`).run()
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_portfolio_evolucion_fecha ON portfolio_evolucion_diaria(fecha)`).run()
 }

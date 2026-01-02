@@ -1,4 +1,5 @@
 import { tickersRouter } from '../routes/tickers.js'
+import cors from 'cors'
 import { inversionesRouter } from '../routes/inversiones.js'
 import { searchRouter } from '../routes/search.js'
 import { historicosRouter } from '../routes/historicos.js'
@@ -8,30 +9,31 @@ import { optionsRouter } from '../routes/options.js'
 import { dividendosRouter } from '../routes/dividendos.js'
 import { tiposInversionRouter } from '../routes/tiposInversion.js'
 
-export function buildRoutes(app, db){
-  // Configuración CORS mejorada
-  app.use((req,res,next)=>{
-    const origin = req.headers.origin
-    const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000'
-    ]
-    
-    if (allowedOrigins.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin)
-    }
-    
-    res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Requested-With')
-    res.setHeader('Access-Control-Allow-Credentials', 'true')
-    res.setHeader('Access-Control-Max-Age', '86400')
-    
-    if(req.method==='OPTIONS') return res.sendStatus(200)
-    next()
-  })
-  
+export function buildRoutes(app, db) {
+  // Configuración CORS mejorada con paquete 'cors'
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000'
+  ]
+
+  app.use(cors({
+    origin: function (origin, callback) {
+      // Permitir request sin origin (como mobile apps o curl)
+      if (!origin) return callback(null, true)
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true)
+      } else {
+        callback(new Error('Not allowed by CORS'))
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    maxAge: 86400 // 24 hours
+  }))
+
   // Middleware de logging para debugging
   app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`)
@@ -46,5 +48,5 @@ export function buildRoutes(app, db){
   app.use('/options', optionsRouter(db))
   app.use('/dividendos', dividendosRouter(db))
   app.use('/tipos-inversion', tiposInversionRouter(db))
-  app.get('/health', (req,res)=>res.json({ok:true}))
+  app.get('/health', (req, res) => res.json({ ok: true }))
 }

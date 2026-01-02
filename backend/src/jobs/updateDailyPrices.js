@@ -1,9 +1,10 @@
 import { fetchPriceForSymbol } from '../sources/marketData.js'
+import { getLimaDate } from '../utils/date.js'
 
-export async function updateDailyPricesJob(db){
+export async function updateDailyPricesJob(db) {
   const tickers = db.prepare('SELECT id, ticker FROM tickers').all()
-  const today = new Date().toISOString().slice(0,10)
-  for (const t of tickers){
+  const today = getLimaDate()
+  for (const t of tickers) {
     try {
       const { price, source } = await fetchPriceForSymbol(t.ticker)
       const upsert = db.prepare(`INSERT INTO precios_historicos (ticker_id, fecha, precio, fuente_api, updated_at)
