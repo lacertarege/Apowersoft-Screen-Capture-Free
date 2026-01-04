@@ -5,35 +5,35 @@ import { fmtDateLima } from './utils'
 import { safeApiCall, safeAsyncHandler } from '../utils/safeApi'
 import { usePriceUpdate } from '../hooks/usePriceUpdate'
 
-export default function PreciosHistoricosView(){
+export default function PreciosHistoricosView() {
   const [tickers, setTickers] = useState([])
   const [loading, setLoading] = useState(false)
   const [q, setQ] = useState('')
   const [sortField, setSortField] = useState('ticker')
   const [sortDir, setSortDir] = useState('asc')
   const [refreshingIds, setRefreshingIds] = useState([])
-  const [refreshModal, setRefreshModal] = useState({ open:false, loading:false, attempts:[], message:'', inserted:0, source:null, title:'', steps:[], from:null, to:null })
+  const [refreshModal, setRefreshModal] = useState({ open: false, loading: false, attempts: [], message: '', inserted: 0, source: null, title: '', steps: [], from: null, to: null })
   const [tipos, setTipos] = useState([])
   const [selectedTipos, setSelectedTipos] = useState([])
-  
+
   // Hook para manejo asíncrono de actualización de precios
   const { isUpdating, updateProgress, updatePrices } = usePriceUpdate()
-  
+
   // Estados para el detalle expandible
   const [expandedTicker, setExpandedTicker] = useState(null)
   const [historicos, setHistoricos] = useState({})
   const [loadingHistoricos, setLoadingHistoricos] = useState({})
-  
+
   // Estados para actualización masiva
-  const [bulkUpdateModal, setBulkUpdateModal] = useState({ 
-    open: false, 
-    isUpdating: false, 
-    progress: [], 
+  const [bulkUpdateModal, setBulkUpdateModal] = useState({
+    open: false,
+    isUpdating: false,
+    progress: [],
     currentTicker: null,
     totalTickers: 0,
     completedTickers: 0
   })
-  
+
   // Estados para registro manual de precios
   const [manualPriceModal, setManualPriceModal] = useState({
     open: false,
@@ -68,29 +68,29 @@ export default function PreciosHistoricosView(){
     }
   })
 
-  useEffect(()=>{
+  useEffect(() => {
     setLoading(true)
     fetch(`${API}/tickers?pageSize=1000&q=${encodeURIComponent(q)}`)
-      .then(r=>r.json())
-      .then(d=>{ setTickers(d.items||[]) })
-      .catch(()=>setTickers([]))
-      .finally(()=>setLoading(false))
+      .then(r => r.json())
+      .then(d => { setTickers(d.items || []) })
+      .catch(() => setTickers([]))
+      .finally(() => setLoading(false))
   }, [q])
 
-  useEffect(()=>{
-    fetch(`${API}/config/tipos-inversion`).then(r=>r.json()).then(d=>{
+  useEffect(() => {
+    fetch(`${API}/config/tipos-inversion`).then(r => r.json()).then(d => {
       const items = d.items || []
       setTipos(items)
-      const defaults = items.filter(t=>{
-        const name = (t.nombre||'').toLowerCase()
+      const defaults = items.filter(t => {
+        const name = (t.nombre || '').toLowerCase()
         return name === 'acciones' || name === 'etf' || name === 'etfs'
-      }).map(t=> t.id)
+      }).map(t => t.id)
       setSelectedTipos(defaults)
-    }).catch(()=>{ setTipos([]); setSelectedTipos([]) })
+    }).catch(() => { setTipos([]); setSelectedTipos([]) })
   }, [])
 
-  function toggleSort(field){
-    if (sortField === field){
+  function toggleSort(field) {
+    if (sortField === field) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
     } else {
       setSortField(field)
@@ -98,29 +98,29 @@ export default function PreciosHistoricosView(){
     }
   }
 
-  const visibleTickers = React.useMemo(()=>{
-    if (!selectedTipos || selectedTipos.length===0) return tickers
+  const visibleTickers = React.useMemo(() => {
+    if (!selectedTipos || selectedTipos.length === 0) return tickers
     const selectedNames = new Set(
-      (tipos||[]).filter(t=> selectedTipos.includes(t.id)).map(t=> (t.nombre||'').toLowerCase())
+      (tipos || []).filter(t => selectedTipos.includes(t.id)).map(t => (t.nombre || '').toLowerCase())
     )
-    return tickers.filter(tk => selectedNames.has((tk.tipo_inversion_nombre||'').toLowerCase()))
+    return tickers.filter(tk => selectedNames.has((tk.tipo_inversion_nombre || '').toLowerCase()))
   }, [tickers, tipos, selectedTipos])
 
-  function sorted(items){
+  function sorted(items) {
     const arr = [...items]
     const dir = sortDir === 'asc' ? 1 : -1
-    arr.sort((a,b)=>{
+    arr.sort((a, b) => {
       let va, vb
-      switch (sortField){
+      switch (sortField) {
         case 'ticker':
-          va = (a.ticker||'').toUpperCase(); vb = (b.ticker||'').toUpperCase();
-          return va < vb ? -1*dir : va > vb ? 1*dir : 0
+          va = (a.ticker || '').toUpperCase(); vb = (b.ticker || '').toUpperCase();
+          return va < vb ? -1 * dir : va > vb ? 1 * dir : 0
         case 'nombre':
-          va = (a.nombre||'').toUpperCase(); vb = (b.nombre||'').toUpperCase();
-          return va < vb ? -1*dir : va > vb ? 1*dir : 0
+          va = (a.nombre || '').toUpperCase(); vb = (b.nombre || '').toUpperCase();
+          return va < vb ? -1 * dir : va > vb ? 1 * dir : 0
         case 'tipo_inversion_nombre':
-          va = (a.tipo_inversion_nombre||'').toUpperCase(); vb = (b.tipo_inversion_nombre||'').toUpperCase();
-          return va < vb ? -1*dir : va > vb ? 1*dir : 0
+          va = (a.tipo_inversion_nombre || '').toUpperCase(); vb = (b.tipo_inversion_nombre || '').toUpperCase();
+          return va < vb ? -1 * dir : va > vb ? 1 * dir : 0
         case 'primera_compra':
         case 'fecha':
         case 'precio_reciente':
@@ -150,7 +150,7 @@ export default function PreciosHistoricosView(){
     try {
       // Usar la fecha de primera compra que ya está disponible en los datos del ticker
       let fechaPrimeraInversion = tk.primera_compra || null
-      
+
       // Si no está disponible en los datos del ticker, obtenerla desde las inversiones
       if (!fechaPrimeraInversion) {
         try {
@@ -196,10 +196,10 @@ export default function PreciosHistoricosView(){
       }
 
       const data = await response.json()
-      
-      const message = data.error 
+
+      const message = data.error
         ? `❌ ${tk.ticker}: ${data.error}`
-        : data.inserted > 0 
+        : data.inserted > 0
           ? `✅ ${tk.ticker}: ${data.inserted} precios actualizados`
           : `⚠️ ${tk.ticker}: Sin nuevos precios`
 
@@ -222,7 +222,7 @@ export default function PreciosHistoricosView(){
             [],
             'Error al refrescar la lista de tickers'
           )
-          
+
           if (tickersResult.success) {
             setTickers(tickersResult.data)
           }
@@ -234,7 +234,7 @@ export default function PreciosHistoricosView(){
               null,
               'Error al recargar históricos'
             )
-            
+
             if (!historicosResult.success) {
               console.error('Error al recargar históricos:', historicosResult.error)
             }
@@ -265,7 +265,7 @@ export default function PreciosHistoricosView(){
   // Función para actualizar todos los tickers
   const updateAllTickers = safeAsyncHandler(async () => {
     const allTickers = visibleTickers.filter(t => t.ticker) // Filtrar tickers válidos
-    
+
     setBulkUpdateModal({
       open: true,
       isUpdating: true,
@@ -277,7 +277,7 @@ export default function PreciosHistoricosView(){
 
     for (let i = 0; i < allTickers.length; i++) {
       const ticker = allTickers[i]
-      
+
       // Actualizar el ticker actual
       setBulkUpdateModal(prev => ({
         ...prev,
@@ -288,7 +288,7 @@ export default function PreciosHistoricosView(){
       try {
         // Usar la fecha de primera compra que ya está disponible en los datos del ticker
         let fechaPrimeraInversion = ticker.primera_compra || null
-        
+
         // Si no está disponible en los datos del ticker, obtenerla desde las inversiones
         if (!fechaPrimeraInversion) {
           try {
@@ -329,11 +329,16 @@ export default function PreciosHistoricosView(){
         }
 
         const data = await response.json()
-        const message = data.error 
-          ? `❌ ${ticker.ticker}: ${data.error}`
-          : data.inserted > 0 
-            ? `✅ ${ticker.ticker}: ${data.inserted} precios actualizados`
-            : `⚠️ ${ticker.ticker}: Sin nuevos precios`
+
+        // Construir mensaje enriquecido con exchange y fuente
+        const exchangeBadge = ticker.exchange ? `[${ticker.exchange}]` : ''
+        const sourceBadge = data.source ? `(${data.source})` : ''
+
+        const message = data.error
+          ? `❌ ${ticker.ticker} ${exchangeBadge}: ${data.error}`
+          : data.inserted > 0
+            ? `✅ ${ticker.ticker} ${exchangeBadge}: ${data.inserted} precios ${sourceBadge}`
+            : `⚠️  ${ticker.ticker} ${exchangeBadge}: Sin nuevos precios ${sourceBadge}`
 
         setBulkUpdateModal(prev => ({
           ...prev,
@@ -345,9 +350,10 @@ export default function PreciosHistoricosView(){
         await new Promise(resolve => setTimeout(resolve, 500))
 
       } catch (error) {
+        const exchangeBadge = ticker.exchange ? `[${ticker.exchange}]` : ''
         setBulkUpdateModal(prev => ({
           ...prev,
-          progress: [...prev.progress, `❌ ${ticker.ticker}: Error - ${error.message}`],
+          progress: [...prev.progress, `❌ ${ticker.ticker} ${exchangeBadge}: Error - ${error.message}`],
           completedTickers: prev.completedTickers + 1
         }))
       }
@@ -367,7 +373,7 @@ export default function PreciosHistoricosView(){
     // Verificar si ya existe un precio para la fecha seleccionada
     const existingPrices = historicos[ticker.id] || []
     const selectedDate = new Date(manualPriceModal.fecha).toISOString().split('T')[0]
-    
+
     const dateExists = existingPrices.some(price => {
       const priceDate = new Date(price.fecha).toISOString().split('T')[0]
       return priceDate === selectedDate
@@ -397,10 +403,10 @@ export default function PreciosHistoricosView(){
       }
 
       const data = await response.json()
-      
+
       // Recargar los históricos del ticker
       await loadHistoricos(ticker.id)
-      
+
       // Cerrar modal y mostrar éxito
       setManualPriceModal({
         open: false,
@@ -428,7 +434,7 @@ export default function PreciosHistoricosView(){
         try {
           const content = e.target.result
           const lines = content.split('\n').filter(line => line.trim())
-          
+
           if (lines.length < 2) {
             reject(new Error('El archivo CSV debe tener al menos 2 líneas (header + datos)'))
             return
@@ -441,7 +447,7 @@ export default function PreciosHistoricosView(){
           const separator = semicolonCount > commaCount ? ';' : ','
 
           const headers = lines[0].split(separator).map(h => h.trim().replace(/"/g, ''))
-          const sampleData = lines.slice(1, 6).map(line => 
+          const sampleData = lines.slice(1, 6).map(line =>
             line.split(separator).map(cell => cell.trim().replace(/"/g, ''))
           )
 
@@ -468,7 +474,7 @@ export default function PreciosHistoricosView(){
 
     try {
       const csvData = await parseCSVFile(file)
-      
+
       setCsvImportModal(prev => ({
         ...prev,
         file: file,
@@ -526,10 +532,10 @@ export default function PreciosHistoricosView(){
 
       const data = await response.json()
       console.log('Datos de respuesta:', data)
-      
+
       // Recargar los históricos del ticker
       await loadHistoricos(ticker.id)
-      
+
       // Cerrar modal y mostrar éxito
       setCsvImportModal({
         open: false,
@@ -551,11 +557,11 @@ export default function PreciosHistoricosView(){
 
   }, 'Error al importar CSV')
 
-  function FechaCell({ fecha }){
+  function FechaCell({ fecha }) {
     if (!fecha) return <span>-</span>
     const d = new Date(fecha)
     const now = new Date()
-    const diffDays = Math.floor((now - d) / (1000*60*60*24))
+    const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24))
     const stale = diffDays > 7
     return <span style={{ color: stale ? '#dc2626' : undefined }}>{fmtDateLima(fecha)}</span>
   }
@@ -594,7 +600,7 @@ export default function PreciosHistoricosView(){
   // Función para guardar cambios
   const handleSaveEdit = async () => {
     if (!editModal.ticker || !editModal.precio || !editModal.fecha || !editModal.valor) return
-    
+
     try {
       const response = await fetch(`${API}/tickers/${editModal.ticker.id}/precio`, {
         method: 'PATCH',
@@ -604,7 +610,7 @@ export default function PreciosHistoricosView(){
           precio: parseFloat(editModal.valor)
         })
       })
-      
+
       if (response.ok) {
         setEditModal({ open: false, ticker: null, precio: null, fecha: '', valor: '' })
         // Recargar históricos del ticker
@@ -621,14 +627,14 @@ export default function PreciosHistoricosView(){
   // Función para eliminar precio
   const handleDelete = async (precioItem) => {
     if (!confirm(`¿Estás seguro de eliminar el precio del ${fmtDateLima(precioItem.fecha)}?`)) return
-    
+
     setDeleting(precioItem.fecha)
-    
+
     try {
       const response = await fetch(`${API}/historicos/${precioItem.id}`, {
         method: 'DELETE'
       })
-      
+
       if (response.ok) {
         // Recargar históricos del ticker expandido
         if (expandedTicker) {
@@ -666,7 +672,7 @@ export default function PreciosHistoricosView(){
           to { transform: rotate(360deg); }
         }
       `}</style>
-      <div className="card" style={{marginBottom:12}}>
+      <div className="card" style={{ marginBottom: 12 }}>
         {/* Header mejorado estilo Apple HIG */}
         <div style={{
           display: 'flex',
@@ -688,7 +694,7 @@ export default function PreciosHistoricosView(){
             }}>
               Todas las Acciones y ETFs
             </h3>
-            
+
             <button
               onClick={updateAllTickers}
               disabled={bulkUpdateModal.isUpdating}
@@ -724,18 +730,18 @@ export default function PreciosHistoricosView(){
             >
               {bulkUpdateModal.isUpdating ? (
                 <>
-                  <svg 
-                    width="16" 
-                    height="16" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2" 
-                    strokeLinecap="round" 
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{ animation: 'spin 1s linear infinite' }}
                   >
-                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                    <path d="M21 12a9 9 0 11-6.219-8.56" />
                   </svg>
                   Actualizando...
                 </>
@@ -772,12 +778,12 @@ export default function PreciosHistoricosView(){
                 }}>
                   Filtrar tipo:
                 </span>
-                {tipos.map(t=> {
+                {tipos.map(t => {
                   const isSelected = selectedTipos.includes(t.id)
                   return (
                     <button
                       key={t.id}
-                      onClick={() => setSelectedTipos(prev=> prev.includes(t.id) ? prev.filter(x=>x!==t.id) : [...prev, t.id])}
+                      onClick={() => setSelectedTipos(prev => prev.includes(t.id) ? prev.filter(x => x !== t.id) : [...prev, t.id])}
                       style={{
                         padding: '6px 14px',
                         fontSize: '13px',
@@ -831,7 +837,7 @@ export default function PreciosHistoricosView(){
                   <input
                     placeholder="Buscar ticker o nombre..."
                     value={q}
-                    onChange={e=>setQ(e.target.value)}
+                    onChange={e => setQ(e.target.value)}
                     style={{
                       padding: '8px 12px 8px 36px',
                       fontSize: '14px',
@@ -864,47 +870,47 @@ export default function PreciosHistoricosView(){
           )}
         </div>
         {loading ? (
-          <div style={{textAlign:'center', padding:20}}>Cargando...</div>
+          <div style={{ textAlign: 'center', padding: 20 }}>Cargando...</div>
         ) : (
-          <div style={{maxHeight:'70vh', overflow:'auto'}}>
+          <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
             <table>
               <thead>
                 <tr>
-                  <th style={{textAlign:'left'}}>
-                    <button onClick={()=>toggleSort('ticker')} style={{all:'unset', cursor:'pointer'}}>Ticker{sortField==='ticker' ? (sortDir==='asc'?' ▲':' ▼') : ''}</button>
+                  <th style={{ textAlign: 'left' }}>
+                    <button onClick={() => toggleSort('ticker')} style={{ all: 'unset', cursor: 'pointer' }}>Ticker{sortField === 'ticker' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                   </th>
-                  <th style={{textAlign:'left'}}>
-                    <button onClick={()=>toggleSort('nombre')} style={{all:'unset', cursor:'pointer'}}>Nombre empresa{sortField==='nombre' ? (sortDir==='asc'?' ▲':' ▼') : ''}</button>
+                  <th style={{ textAlign: 'left' }}>
+                    <button onClick={() => toggleSort('nombre')} style={{ all: 'unset', cursor: 'pointer' }}>Nombre empresa{sortField === 'nombre' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                   </th>
-                  <th style={{textAlign:'left'}}>
-                    <button onClick={()=>toggleSort('tipo_inversion_nombre')} style={{all:'unset', cursor:'pointer'}}>Tipo de inversión{sortField==='tipo_inversion_nombre' ? (sortDir==='asc'?' ▲':' ▼') : ''}</button>
+                  <th style={{ textAlign: 'left' }}>
+                    <button onClick={() => toggleSort('tipo_inversion_nombre')} style={{ all: 'unset', cursor: 'pointer' }}>Tipo de inversión{sortField === 'tipo_inversion_nombre' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                   </th>
-                  <th style={{textAlign:'left'}}>
-                    <button onClick={()=>toggleSort('primera_compra')} style={{all:'unset', cursor:'pointer'}}>Primera compra{sortField==='primera_compra' ? (sortDir==='asc'?' ▲':' ▼') : ''}</button>
+                  <th style={{ textAlign: 'left' }}>
+                    <button onClick={() => toggleSort('primera_compra')} style={{ all: 'unset', cursor: 'pointer' }}>Primera compra{sortField === 'primera_compra' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                   </th>
-                  <th style={{textAlign:'left', whiteSpace:'nowrap'}}>
-                    <button onClick={()=>toggleSort('fecha')} style={{all:'unset', cursor:'pointer'}}>Fecha{sortField==='fecha' ? (sortDir==='asc'?' ▲':' ▼') : ''}</button>
+                  <th style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => toggleSort('fecha')} style={{ all: 'unset', cursor: 'pointer' }}>Fecha{sortField === 'fecha' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                   </th>
-                  <th style={{textAlign:'right'}}>
-                    <button onClick={()=>toggleSort('precio_reciente')} style={{all:'unset', cursor:'pointer'}}>Precio más reciente{sortField==='precio_reciente' ? (sortDir==='asc'?' ▲':' ▼') : ''}</button>
+                  <th style={{ textAlign: 'right' }}>
+                    <button onClick={() => toggleSort('precio_reciente')} style={{ all: 'unset', cursor: 'pointer' }}>Precio más reciente{sortField === 'precio_reciente' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                   </th>
-                  <th style={{textAlign:'center'}}>Acciones</th>
+                  <th style={{ textAlign: 'center' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted(visibleTickers).map(tk=> {
+                {sorted(visibleTickers).map(tk => {
                   const isRefreshing = refreshingIds.includes(tk.id)
                   const isExpanded = expandedTicker?.id === tk.id
                   const tickerHistoricos = historicos[tk.id] || []
                   const isLoadingHistoricos = loadingHistoricos[tk.id]
-                  
+
                   return (
                     <React.Fragment key={tk.id}>
                       {/* Fila principal */}
                       <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpansion(tk)}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ 
+                            <span style={{
                               transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                               transition: 'transform 0.2s ease',
                               fontSize: '12px',
@@ -917,20 +923,20 @@ export default function PreciosHistoricosView(){
                         </td>
                         <td>{tk.nombre}</td>
                         <td>{tk.tipo_inversion_nombre || '-'}</td>
-                        <td style={{whiteSpace:'nowrap'}}>{tk.primera_compra ? fmtDateLima(tk.primera_compra) : '-'}</td>
-                        <td style={{whiteSpace:'nowrap'}}><FechaCell fecha={tk.fecha} /></td>
-                        <td style={{textAlign:'right'}}>
+                        <td style={{ whiteSpace: 'nowrap' }}>{tk.primera_compra ? fmtDateLima(tk.primera_compra) : '-'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}><FechaCell fecha={tk.fecha} /></td>
+                        <td style={{ textAlign: 'right' }}>
                           {tk.precio_reciente ? `$${Number(tk.precio_reciente).toFixed(2)}` : '-'}
                         </td>
-                        <td style={{textAlign:'center'}}>
-                          <button 
-                            title="Actualizar precio" 
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            title="Actualizar precio"
                             onClick={(e) => {
                               e.stopPropagation()
                               !isRefreshing && refreshTicker(tk)
-                            }} 
-                            disabled={isRefreshing} 
-                            style={{padding:'4px 6px', border:'1px solid #ddd', borderRadius:6, background:'#fff', cursor: isRefreshing ? 'default' : 'pointer', opacity: isRefreshing ? 0.6 : 1}}
+                            }}
+                            disabled={isRefreshing}
+                            style={{ padding: '4px 6px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: isRefreshing ? 'default' : 'pointer', opacity: isRefreshing ? 0.6 : 1 }}
                           >
                             {isRefreshing ? (
                               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -951,7 +957,7 @@ export default function PreciosHistoricosView(){
                           </button>
                         </td>
                       </tr>
-                      
+
                       {/* Fila expandible con históricos */}
                       {isExpanded && (
                         <tr>
@@ -962,8 +968,8 @@ export default function PreciosHistoricosView(){
                                   Precios Históricos - {tk.ticker}
                                 </h4>
                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                <button 
-                                  onClick={(e) => {
+                                  <button
+                                    onClick={(e) => {
                                       e.stopPropagation();
                                       setCsvImportModal({
                                         open: true,
@@ -976,8 +982,8 @@ export default function PreciosHistoricosView(){
                                       });
                                     }}
                                     className="btn btn-outline-success"
-                                  style={{ padding: '6px 12px', fontSize: '12px' }}
-                                >
+                                    style={{ padding: '6px 12px', fontSize: '12px' }}
+                                  >
                                     📄 Importar CSV
                                   </button>
                                   <button
@@ -997,45 +1003,45 @@ export default function PreciosHistoricosView(){
                                   >
                                     ➕ Agregar Precio
                                   </button>
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    !isRefreshing && refreshTicker(tk, true);
-                                  }}
-                                  className="btn btn-primary"
-                                  disabled={isRefreshing}
-                                  style={{ 
-                                    padding: '6px 12px', 
-                                    fontSize: '12px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px'
-                                  }}
-                                >
-                                  {isRefreshing ? (
-                                    <>
-                                      <svg 
-                                        width="14" 
-                                        height="14" 
-                                        viewBox="0 0 24 24" 
-                                        fill="none" 
-                                        stroke="currentColor" 
-                                        strokeWidth="2" 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round"
-                                        style={{ animation: 'spin 1s linear infinite' }}
-                                      >
-                                        <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                                      </svg>
-                                      Procesando...
-                                    </>
-                                  ) : (
-                                    'Actualizar Precios'
-                                  )}
-                                </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      !isRefreshing && refreshTicker(tk, true);
+                                    }}
+                                    className="btn btn-primary"
+                                    disabled={isRefreshing}
+                                    style={{
+                                      padding: '6px 12px',
+                                      fontSize: '12px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px'
+                                    }}
+                                  >
+                                    {isRefreshing ? (
+                                      <>
+                                        <svg
+                                          width="14"
+                                          height="14"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          style={{ animation: 'spin 1s linear infinite' }}
+                                        >
+                                          <path d="M21 12a9 9 0 11-6.219-8.56" />
+                                        </svg>
+                                        Procesando...
+                                      </>
+                                    ) : (
+                                      'Actualizar Precios'
+                                    )}
+                                  </button>
                                 </div>
                               </div>
-                              
+
                               {isLoadingHistoricos ? (
                                 <div style={{
                                   textAlign: 'center',
@@ -1045,18 +1051,18 @@ export default function PreciosHistoricosView(){
                                   alignItems: 'center',
                                   gap: '8px'
                                 }}>
-                                  <svg 
-                                    width="24" 
-                                    height="24" 
-                                    viewBox="0 0 24 24" 
-                                    fill="none" 
-                                    stroke="#2563eb" 
-                                    strokeWidth="2" 
-                                    strokeLinecap="round" 
+                                  <svg
+                                    width="24"
+                                    height="24"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="#2563eb"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
                                     strokeLinejoin="round"
                                     style={{ animation: 'spin 1s linear infinite' }}
                                   >
-                                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                                    <path d="M21 12a9 9 0 11-6.219-8.56" />
                                   </svg>
                                   <div style={{ fontSize: '14px', color: '#666' }}>Cargando datos históricos...</div>
                                 </div>
@@ -1072,6 +1078,7 @@ export default function PreciosHistoricosView(){
                                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ddd' }}>Fecha</th>
                                         <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid #ddd' }}>Precio</th>
                                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ddd' }}>Fuente</th>
+                                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ddd', fontSize: '12px' }}>Actualizado</th>
                                         <th style={{ textAlign: 'center', padding: '8px', borderBottom: '1px solid #ddd', width: '100px' }}>Acciones</th>
                                       </tr>
                                     </thead>
@@ -1083,30 +1090,55 @@ export default function PreciosHistoricosView(){
                                             {(() => {
                                               const currency = tk?.moneda || 'USD'
                                               const numValue = Number(item.precio) || 0
-                                              
+
                                               if (currency === 'PEN') {
                                                 return `S/ ${new Intl.NumberFormat('es-PE', {
                                                   minimumFractionDigits: 2,
                                                   maximumFractionDigits: 2
                                                 }).format(numValue)}`
                                               }
-                                              
+
                                               if (currency === 'USD') {
                                                 return `$ ${new Intl.NumberFormat('es-PE', {
                                                   minimumFractionDigits: 2,
                                                   maximumFractionDigits: 2
                                                 }).format(numValue)}`
                                               }
-                                              
+
                                               return new Intl.NumberFormat('es-PE', {
-                                              style: 'currency',
+                                                style: 'currency',
                                                 currency: currency,
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2
                                               }).format(numValue)
                                             })()}
                                           </td>
                                           <td style={{ padding: '8px' }}>{item.fuente_api || 'N/A'}</td>
+                                          <td style={{ padding: '8px', fontSize: '11px', color: '#64748b' }}>
+                                            {item.updated_at ? (
+                                              (() => {
+                                                const date = new Date(item.updated_at)
+                                                const now = new Date()
+                                                const diffMs = now - date
+                                                const diffMins = Math.floor(diffMs / 60000)
+                                                const diffHours = Math.floor(diffMs / 3600000)
+                                                const diffDays = Math.floor(diffMs / 86400000)
+
+                                                if (diffMins < 1) return 'Hace un momento'
+                                                if (diffMins < 60) return `Hace ${diffMins}m`
+                                                if (diffHours < 24) return `Hace ${diffHours}h`
+                                                if (diffDays < 7) return `Hace ${diffDays}d`
+
+                                                return date.toLocaleDateString('es-PE', {
+                                                  year: 'numeric',
+                                                  month: 'short',
+                                                  day: 'numeric',
+                                                  hour: '2-digit',
+                                                  minute: '2-digit'
+                                                })
+                                              })()
+                                            ) : 'N/A'}
+                                          </td>
                                           <td style={{ textAlign: 'center', padding: '8px' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                               <button
@@ -1167,8 +1199,8 @@ export default function PreciosHistoricosView(){
           </div>
         )}
       </div>
-      <RefreshModal open={refreshModal.open} title={refreshModal.title} loading={refreshModal.loading} attempts={refreshModal.attempts} message={refreshModal.message} inserted={refreshModal.inserted} source={refreshModal.source} steps={refreshModal.steps} from={refreshModal.from} to={refreshModal.to} onClose={()=> setRefreshModal(m=>({...m, open:false}))} />
-      
+      <RefreshModal open={refreshModal.open} title={refreshModal.title} loading={refreshModal.loading} attempts={refreshModal.attempts} message={refreshModal.message} inserted={refreshModal.inserted} source={refreshModal.source} steps={refreshModal.steps} from={refreshModal.from} to={refreshModal.to} onClose={() => setRefreshModal(m => ({ ...m, open: false }))} />
+
       {/* Modal de actualización masiva */}
       {bulkUpdateModal.open && (
         <div style={{
@@ -1197,22 +1229,22 @@ export default function PreciosHistoricosView(){
             <h2 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>
               🔄 Actualización Masiva de Precios
             </h2>
-            
+
             {bulkUpdateModal.isUpdating && (
               <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f0f9ff', borderRadius: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <svg 
-                    width="16" 
-                    height="16" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="#2563eb" 
-                    strokeWidth="2" 
-                    strokeLinecap="round" 
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="2"
+                    strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{ animation: 'spin 1s linear infinite' }}
                   >
-                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                    <path d="M21 12a9 9 0 11-6.219-8.56" />
                   </svg>
                   <strong>Procesando...</strong>
                 </div>
@@ -1260,7 +1292,7 @@ export default function PreciosHistoricosView(){
           </div>
         </div>
       )}
-      
+
       {/* Modal para registro manual de precios */}
       {manualPriceModal.open && (
         <div style={{
@@ -1285,7 +1317,7 @@ export default function PreciosHistoricosView(){
             <h3 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>
               ➕ Agregar Precio Manual - {manualPriceModal.ticker?.ticker}
             </h3>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 Fecha:
@@ -1304,7 +1336,7 @@ export default function PreciosHistoricosView(){
                 max={new Date().toISOString().split('T')[0]} // No permitir fechas futuras
               />
             </div>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 Precio:
@@ -1325,7 +1357,7 @@ export default function PreciosHistoricosView(){
                 }}
               />
             </div>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 Fuente:
@@ -1348,7 +1380,7 @@ export default function PreciosHistoricosView(){
                 <option value="polygon">Polygon</option>
               </select>
             </div>
-            
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <button
                 onClick={() => setManualPriceModal({
@@ -1368,7 +1400,7 @@ export default function PreciosHistoricosView(){
               <button
                 onClick={() => addManualPrice(manualPriceModal.ticker)}
                 className="btn btn-primary"
-                style={{ 
+                style={{
                   padding: '8px 16px',
                   display: 'flex',
                   alignItems: 'center',
@@ -1378,18 +1410,18 @@ export default function PreciosHistoricosView(){
               >
                 {manualPriceModal.loading ? (
                   <>
-                    <svg 
-                      width="14" 
-                      height="14" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="2" 
-                      strokeLinecap="round" 
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
                       strokeLinejoin="round"
                       style={{ animation: 'spin 1s linear infinite' }}
                     >
-                      <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                      <path d="M21 12a9 9 0 11-6.219-8.56" />
                     </svg>
                     Guardando...
                   </>
@@ -1424,7 +1456,7 @@ export default function PreciosHistoricosView(){
             maxWidth: '90vw'
           }}>
             <h3 style={{ margin: '0 0 16px 0' }}>Editar Precio Histórico</h3>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 Fecha:
@@ -1441,7 +1473,7 @@ export default function PreciosHistoricosView(){
                 }}
               />
             </div>
-            
+
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 Precio:
@@ -1459,7 +1491,7 @@ export default function PreciosHistoricosView(){
                 }}
               />
             </div>
-            
+
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setEditModal({ open: false, ticker: null, precio: null, fecha: '', valor: '' })}
@@ -1545,10 +1577,10 @@ export default function PreciosHistoricosView(){
                   />
                 </div>
 
-                <div style={{ 
-                  marginBottom: '16px', 
-                  padding: '12px', 
-                  backgroundColor: '#f8fafc', 
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: '#f8fafc',
                   borderRadius: '4px',
                   fontSize: '14px',
                   color: '#64748b'
@@ -1650,10 +1682,10 @@ export default function PreciosHistoricosView(){
                   <h5 style={{ margin: '0 0 8px 0', color: '#374151' }}>
                     Vista previa de los datos:
                   </h5>
-                  <div style={{ 
-                    maxHeight: '200px', 
-                    overflow: 'auto', 
-                    border: '1px solid #e5e7eb', 
+                  <div style={{
+                    maxHeight: '200px',
+                    overflow: 'auto',
+                    border: '1px solid #e5e7eb',
                     borderRadius: '4px',
                     fontSize: '12px'
                   }}>
@@ -1661,16 +1693,16 @@ export default function PreciosHistoricosView(){
                       <thead>
                         <tr style={{ backgroundColor: '#f9fafb' }}>
                           {csvImportModal.csvData.headers.map((header, index) => (
-                            <th 
-                              key={index} 
-                              style={{ 
-                                padding: '6px 8px', 
+                            <th
+                              key={index}
+                              style={{
+                                padding: '6px 8px',
                                 border: '1px solid #e5e7eb',
                                 textAlign: 'left',
                                 fontWeight: 'bold',
-                                backgroundColor: 
+                                backgroundColor:
                                   index == csvImportModal.columnMapping.fecha ? '#dcfce7' :
-                                  index == csvImportModal.columnMapping.precio ? '#dcfce7' : '#f9fafb'
+                                    index == csvImportModal.columnMapping.precio ? '#dcfce7' : '#f9fafb'
                               }}
                             >
                               {header}
@@ -1682,14 +1714,14 @@ export default function PreciosHistoricosView(){
                         {csvImportModal.csvData.sampleData.map((row, rowIndex) => (
                           <tr key={rowIndex}>
                             {row.map((cell, cellIndex) => (
-                              <td 
-                                key={cellIndex} 
-                                style={{ 
-                                  padding: '4px 8px', 
+                              <td
+                                key={cellIndex}
+                                style={{
+                                  padding: '4px 8px',
                                   border: '1px solid #e5e7eb',
-                                  backgroundColor: 
+                                  backgroundColor:
                                     cellIndex == csvImportModal.columnMapping.fecha ? '#dcfce7' :
-                                    cellIndex == csvImportModal.columnMapping.precio ? '#dcfce7' : 'white'
+                                      cellIndex == csvImportModal.columnMapping.precio ? '#dcfce7' : 'white'
                                 }}
                               >
                                 {cell}
@@ -1704,8 +1736,8 @@ export default function PreciosHistoricosView(){
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                   <button
-                    onClick={() => setCsvImportModal(prev => ({ 
-                      ...prev, 
+                    onClick={() => setCsvImportModal(prev => ({
+                      ...prev,
                       step: 'upload',
                       csvData: null,
                       columnMapping: { fecha: '', precio: '' }
@@ -1716,7 +1748,7 @@ export default function PreciosHistoricosView(){
                   >
                     ← Volver
                   </button>
-                  
+
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
                       onClick={() => setCsvImportModal({
@@ -1736,12 +1768,12 @@ export default function PreciosHistoricosView(){
                     </button>
                     <button
                       onClick={() => importCsvPrices(
-                        csvImportModal.ticker, 
-                        csvImportModal.file, 
+                        csvImportModal.ticker,
+                        csvImportModal.file,
                         csvImportModal.columnMapping
                       )}
                       className="btn btn-success"
-                      style={{ 
+                      style={{
                         padding: '8px 16px',
                         display: 'flex',
                         alignItems: 'center',
@@ -1751,18 +1783,18 @@ export default function PreciosHistoricosView(){
                     >
                       {csvImportModal.loading ? (
                         <>
-                          <svg 
-                            width="14" 
-                            height="14" 
-                            viewBox="0 0 24 24" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            strokeWidth="2" 
-                            strokeLinecap="round" 
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
                             strokeLinejoin="round"
                             style={{ animation: 'spin 1s linear infinite' }}
                           >
-                            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                            <path d="M21 12a9 9 0 11-6.219-8.56" />
                           </svg>
                           Importando...
                         </>

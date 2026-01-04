@@ -3,7 +3,7 @@ import multer from 'multer'
 import { backfillHistoricalPrices } from '../jobs/backfillHistoricalPrices.js'
 
 // Configurar multer para manejar archivos CSV
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB límite
@@ -17,26 +17,26 @@ const upload = multer({
   }
 })
 
-export function historicosRouter(db){
+export function historicosRouter(db) {
   const r = express.Router()
-  r.get('/:id', (req,res)=>{
+  r.get('/:id', (req, res) => {
     const id = Number(req.params.id)
     const from = req.query.from || '1970-01-01'
-    const rows = db.prepare(`SELECT id, fecha, precio, fuente_api FROM precios_historicos WHERE ticker_id=? AND fecha>=? ORDER BY fecha ASC`).all(id, from)
+    const rows = db.prepare(`SELECT id, fecha, precio, fuente_api, updated_at FROM precios_historicos WHERE ticker_id=? AND fecha>=? ORDER BY fecha ASC`).all(id, from)
     res.json({ items: rows })
   })
 
-  r.post('/backfill', async (req,res)=>{
-    try{
-      ;(async ()=>{ try { await backfillHistoricalPrices(db) } catch(e){ console.error('backfill historicos API error', e) } })()
+  r.post('/backfill', async (req, res) => {
+    try {
+      ; (async () => { try { await backfillHistoricalPrices(db) } catch (e) { console.error('backfill historicos API error', e) } })()
       res.json({ started: true })
-    } catch(e){
+    } catch (e) {
       console.error('POST /historicos/backfill error', e)
       res.status(500).json({ error: 'No se pudo iniciar el backfill' })
     }
   })
 
-  r.delete('/:id', (req,res)=>{
+  r.delete('/:id', (req, res) => {
     try {
       const id = Number(req.params.id)
       const result = db.prepare('DELETE FROM precios_historicos WHERE id=?').run(id)
@@ -80,7 +80,7 @@ export function historicosRouter(db){
       const precioIndex = parseInt(columnMapping.precio)
 
       if (isNaN(fechaIndex) || isNaN(precioIndex)) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Se requieren mapeos válidos para las columnas de fecha y precio',
           received: { fecha: columnMapping.fecha, precio: columnMapping.precio }
         })
@@ -88,7 +88,7 @@ export function historicosRouter(db){
 
       // Convertir buffer a string
       const csvContent = req.file.buffer.toString('utf-8')
-      
+
       // Parsear CSV
       const lines = csvContent.split('\n').filter(line => line.trim())
       if (lines.length < 2) {
@@ -104,18 +104,18 @@ export function historicosRouter(db){
       const headers = lines[0].split(separator).map(h => h.trim().replace(/"/g, ''))
 
       if (fechaIndex >= headers.length || precioIndex >= headers.length) {
-        return res.status(400).json({ 
-          error: 'Los índices de columnas están fuera del rango del archivo CSV' 
+        return res.status(400).json({
+          error: 'Los índices de columnas están fuera del rango del archivo CSV'
         })
       }
 
       // Función para convertir fecha a YYYY-MM-DD
       const convertDateFormat = (dateStr) => {
         if (!dateStr) return null
-        
+
         // Limpiar la fecha
         const cleanDate = dateStr.trim().replace(/"/g, '')
-        
+
         // Intentar diferentes formatos
         const formats = [
           /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // DD/MM/YYYY
@@ -128,7 +128,7 @@ export function historicosRouter(db){
           const match = cleanDate.match(format)
           if (match) {
             let day, month, year
-            
+
             if (format.source.includes('\\d{4}') && match[1].length === 4) {
               // YYYY-MM-DD o YYYY/MM/DD
               year = match[1]
@@ -140,7 +140,7 @@ export function historicosRouter(db){
               month = match[2].padStart(2, '0')
               year = match[3].length === 2 ? '20' + match[3] : match[3]
             }
-            
+
             // Validar fecha
             const date = new Date(year, month - 1, day)
             if (date.getFullYear() == year && date.getMonth() == month - 1 && date.getDate() == day) {
@@ -148,7 +148,7 @@ export function historicosRouter(db){
             }
           }
         }
-        
+
         console.log(`No se pudo convertir la fecha: "${cleanDate}"`)
         return null
       }

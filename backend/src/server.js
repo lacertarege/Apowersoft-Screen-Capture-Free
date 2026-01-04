@@ -5,6 +5,7 @@ import { createDb } from './setup/db.js'
 import { buildRoutes } from './setup/routes.js'
 import { startJobs } from './setup/jobs.js'
 import logger from './utils/logger.js'
+import { getLimaDate } from './utils/date.js'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
 
 async function startServer() {

@@ -1,0 +1,38 @@
+﻿================================================================================
+TEST MANUAL: Actualizando PML con exchange BVL
+================================================================================
+
+­ƒôï Datos de PML en BD:
+{
+  "id": 17,
+  "ticker": "PML",
+  "exchange": "BVL"
+}
+
+­ƒôª Objeto ticker para API:
+{
+  "ticker": "PML",
+  "exchange": "BVL"
+}
+
+­ƒôà Rango de fechas: 2023-05-22 a 2026-01-04
+
+­ƒöì Llamando a fetchDailyHistory...
+
+­ƒôè fetchDailyHistory: PML (BVL) desde 2023-05-22 hasta 2026-01-04
+   ÔåÆ Intentando Yahoo Finance con s├¡mbolo: PML.LM
+
+­ƒôè Resultado:
+   Items: 0
+   Source: null
+   Attempts: 4
+
+­ƒôØ Detalles de intentos:
+   1. polygon: skipped - No API key
+   2. alphavantage: skipped - No API key
+   3. yahoo:BVL: error - HTTP 404: {"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}
+   4. yahoo.alt:BVL: error - HTTP 404: {"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}
+
+ÔÜá´©Å  No se obtuvieron precios
+
+================================================================================
