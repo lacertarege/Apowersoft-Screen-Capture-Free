@@ -95,20 +95,51 @@ export function dashboardRouter(db) {
     res.json({ items: data })
   })
 
+  // 4a. /by-exchange
+  r.get('/by-exchange', (req, res) => {
+    const { currency = 'USD' } = req.query
+    const data = db.prepare(`
+      SELECT t.exchange, SUM(i.importe) as inversion_usd, SUM(i.cantidad * (SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1)) as valor_actual_usd
+      FROM inversiones i JOIN tickers t ON t.id = i.ticker_id
+      WHERE t.moneda = ? AND t.exchange IS NOT NULL
+      GROUP BY t.exchange ORDER BY inversion_usd DESC
+    `).all(currency)
+    res.json({ items: data })
+  })
+
   // 5. /investment-vs-profitability
   r.get('/investment-vs-profitability', async (req, res) => {
     try {
       const { range = 'all', currency = 'USD' } = req.query
+
+      // Define minimum start dates per currency
+      const minStartDates = {
+        'USD': '2023-05-01',
+        'PEN': '2023-06-01'
+      }
+
       let from = '1970-01-01'; const now = new Date(); const map = { '1w': 7, '1m': 30, '3m': 90, '6m': 180, '1y': 365, 'ytd': 'ytd' };
       if (map[range] && map[range] !== 'ytd') { const d = new Date(); d.setDate(now.getDate() - map[range]); from = d.toISOString().slice(0, 10); }
       else if (range === 'ytd') from = `${now.getFullYear()}-01-01`;
+
+      //Apply minimum start date for the currency when range is 'all'
+      if (range === 'all' && minStartDates[currency]) {
+        from = minStartDates[currency];
+      }
 
       const tickers = db.prepare(`SELECT DISTINCT t.id FROM tickers t INNER JOIN inversiones i ON i.ticker_id = t.id WHERE t.moneda = ?`).all(currency)
       if (tickers.length === 0) return res.json({ items: [] })
       const tickerIds = tickers.map(t => t.id)
       const hoy = getLimaDate()
 
-      const inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
+      // For currency-specific minimum dates, filter out earlier investments
+      let inversiones
+      if (range === 'all' && minStartDates[currency]) {
+        inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(minStartDates[currency])
+      } else {
+        inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
+      }
+
       const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
       const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
 
@@ -117,16 +148,26 @@ export function dashboardRouter(db) {
       const divMap = {}; dividendos.forEach(d => { if (!divMap[d.ticker_id]) divMap[d.ticker_id] = {}; const f = d.fecha.slice(0, 10); divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto); })
 
       let curr = new Date(from + 'T00:00:00Z')
-      const stats = {}; tickerIds.forEach(id => {
-        const init = db.prepare('SELECT SUM(importe) as imp, SUM(cantidad) as q FROM inversiones WHERE ticker_id = ? AND fecha < ?').get(id, from)
-        const lp = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id=? AND fecha < ? ORDER BY fecha DESC LIMIT 1').get(id, from)
-        stats[id] = { q: Number(init?.q || 0), lv: Number((init?.q || 0) * (lp?.precio || 0)), lp: Number(lp?.precio || 0) }
+      const stats = {};
+
+      // Initialize stats - for currency-specific minimum dates, start from zero
+      const shouldStartFromZero = range === 'all' && minStartDates[currency]
+
+      tickerIds.forEach(id => {
+        if (shouldStartFromZero) {
+          // Start from zero for currency-specific date ranges
+          stats[id] = { q: 0, lv: 0, lp: 0 }
+        } else {
+          // Load previous state for other ranges
+          const init = db.prepare('SELECT SUM(importe) as imp, SUM(cantidad) as q FROM inversiones WHERE ticker_id = ? AND fecha < ?').get(id, from)
+          const lp = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id=? AND fecha < ? ORDER BY fecha DESC LIMIT 1').get(id, from)
+          stats[id] = { q: Number(init?.q || 0), lv: Number((init?.q || 0) * (lp?.precio || 0)), lp: Number(lp?.precio || 0) }
+        }
       })
 
-      const items = []; let Rna = 0
+      const items = []; let RmAcum = 0; let AportesAcum = 0
       while (true) {
         const dStr = curr.toISOString().slice(0, 10); if (dStr > hoy) break
-        if (dStr.endsWith('-01-01')) Rna = 0
         let ViT = 0, FT = 0, VfT = 0, RmT = 0
         tickerIds.forEach(id => {
           const s = stats[id]; const inv = invMap[id]?.[dStr] || { imp: 0, q: 0 }; const div = divMap[id]?.[dStr] || 0
@@ -134,10 +175,13 @@ export function dashboardRouter(db) {
           const p = preMap[id]?.[dStr] || s.lp; s.lp = p; const Vf = s.q * p; VfT += Vf;
           RmT += (Vf - (Vi + F)) + div; s.lv = Vf;
         })
-        let Rn = (ViT + FT) > 0 ? RmT / (ViT + FT) : 0; Rna += Rn;
-        items.push({ fecha: dStr, inversionUsd: Number((ViT + FT).toFixed(2)), valorActualUsd: Number(VfT.toFixed(2)), rentabilidadPorcentaje: Number((Rna * 100).toFixed(2)) })
+        AportesAcum += FT
+        RmAcum += RmT
+        // Return accumulated contributions (only F), current value, and accumulated return
+        items.push({ fecha: dStr, inversionUsd: Number(AportesAcum.toFixed(2)), valorActualUsd: Number(VfT.toFixed(2)), rendimientoAcumulado: Number(RmAcum.toFixed(2)) })
         curr.setUTCDate(curr.getUTCDate() + 1)
       }
+
       res.json({ items })
     } catch (e) { res.status(500).json({ error: e.message }) }
   })

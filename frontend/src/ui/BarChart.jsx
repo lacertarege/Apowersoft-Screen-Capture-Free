@@ -66,8 +66,8 @@ export default function BarChart({ data, currency = 'USD', width = 800, height =
             <g key={index}>
               <rect x={x} y={yInversion} width={barWidth} height={barHeightInversion} fill={color} fillOpacity={0.7} onMouseEnter={() => setHoverBar({ index, type: 'inversion', item })} onMouseLeave={() => setHoverBar(null)} style={{ cursor: 'pointer' }} />
               <rect x={x + barWidth * 0.1} y={yValor} width={barWidth * 0.8} height={barHeightValor} fill={color} fillOpacity={1} onMouseEnter={() => setHoverBar({ index, type: 'valor', item })} onMouseLeave={() => setHoverBar(null)} style={{ cursor: 'pointer' }} />
-              <text x={x + barWidth / 2} y={height - paddingBottom + 20} fontSize="12" fill="#374151" textAnchor="middle" style={{ transform: (item.plataforma || item.tipo_inversion)?.length > 10 ? 'rotate(-45deg)' : 'none', transformOrigin: `${x + barWidth / 2}px ${height - paddingBottom + 20}px` }}>
-                {item.plataforma || item.tipo_inversion}
+              <text x={x + barWidth / 2} y={height - paddingBottom + 20} fontSize="12" fill="#374151" textAnchor="middle" style={{ transform: (item.plataforma || item.tipo_inversion || item.exchange)?.length > 10 ? 'rotate(-45deg)' : 'none', transformOrigin: `${x + barWidth / 2}px ${height - paddingBottom + 20}px` }}>
+                {item.exchange || item.plataforma || item.tipo_inversion}
               </text>
             </g>
           )
@@ -75,7 +75,7 @@ export default function BarChart({ data, currency = 'USD', width = 800, height =
         {hoverBar && (
           <g>
             <rect x={xFor(hoverBar.index) + barWidth / 2 - 90} y={20} width={180} height={100} fill="rgba(0,0,0,0.85)" rx="6" />
-            <text x={xFor(hoverBar.index) + barWidth / 2} y={38} fontSize="12" fill="white" textAnchor="middle" fontWeight="700">{hoverBar.item.plataforma || hoverBar.item.tipo_inversion}</text>
+            <text x={xFor(hoverBar.index) + barWidth / 2} y={38} fontSize="12" fill="white" textAnchor="middle" fontWeight="700">{hoverBar.item.exchange || hoverBar.item.plataforma || hoverBar.item.tipo_inversion}</text>
             <text x={xFor(hoverBar.index) + barWidth / 2} y={58} fontSize="11" fill="white" textAnchor="middle">Inv: {formatFullValue(hoverBar.item.inversion_usd)}</text>
             <text x={xFor(hoverBar.index) + barWidth / 2} y={73} fontSize="11" fill="white" textAnchor="middle">Val: {formatFullValue(hoverBar.item.valor_actual_usd)}</text>
             <text x={xFor(hoverBar.index) + barWidth / 2} y={88} fontSize="11" fill={hoverBar.item.valor_actual_usd >= hoverBar.item.inversion_usd ? "#4ade80" : "#fb7185"} textAnchor="middle" fontWeight="600">

@@ -49,15 +49,13 @@ async function startServer() {
 
     // NO ejecutar seed si ya hay datos - solo para bases de datos nuevas
     try {
-      const existingData = db.prepare('SELECT COUNT(*) as count FROM tickers').get()
-      if (existingData.count === 0) {
+      const hasData = db.prepare('SELECT COUNT(*) as c FROM tickers').get().c > 0
+      if (!hasData) {
         await (await import('./db/seed.js')).default(db)
-        logger.info('Datos iniciales cargados (base de datos nueva)')
-      } else {
-        logger.info('Base de datos existente detectada - preservando datos')
+        logger.info('Seed ejecutado (base de datos nueva)')
       }
     } catch (error) {
-      logger.warn('Error verificando datos existentes:', error.message)
+      logger.warn('Error en seed:', error.message)
     }
 
     // Configurar rutas

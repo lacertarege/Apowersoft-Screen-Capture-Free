@@ -1,158 +1,225 @@
 import express from 'express'
-import { request } from 'undici'
 
-const BVL_API_BASE = 'https://dataondemand.bvl.com.pe/v1'
-
-export function bvlRouter() {
+export function bvlRouter(db) {
     const r = express.Router()
 
-    // POST /api/bvl/search - Buscar empresas en BVL
+    // POST /api/bvl/search - Buscar empresas en caché local
     r.post('/search', async (req, res) => {
         try {
             const { query = '' } = req.body
 
-            const response = await request(`${BVL_API_BASE}/issuers/search`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    firstLetter: '',
-                    sectorCode: '',
-                    companyName: query
-                })
-            })
-
-            if (response.statusCode !== 200) {
-                return res.status(response.statusCode).json({
-                    error: 'Error al consultar BVL'
-                })
+            if (!query || query.length < 2) {
+                return res.json({ results: [] })
             }
 
-            const data = await response.body.json()
+            // Buscar en caché local
+            const results = db.prepare(`
+        SELECT 
+          rpj_code as rpjCode,
+          company_name as name,
+          sector_code as sectorCode,
+          sector_description as sector,
+          stock as tickers,
+          indices
+        FROM bvl_companies
+        WHERE 
+          company_name LIKE ? OR
+          stock LIKE ?
+        LIMIT 20
+      `).all(`%${query}%`, `%${query}%`)
 
-            // Formatear respuesta para el frontend
-            const results = data.map(company => ({
-                rpjCode: company.companyCode,
-                name: company.companyName,
-                sector: company.sectorDescription,
-                sectorCode: company.sectorCode,
-                tickers: company.stock || [],
-                indices: company.index || []
+            // Parsear JSON fields
+            const formatted = results.map(r => ({
+                ...r,
+                tickers: JSON.parse(r.tickers || '[]'),
+                indices: JSON.parse(r.indices || '[]')
             }))
 
-            res.json({ results })
+            res.json({ results: formatted })
         } catch (error) {
-            console.error('Error en /api/bvl/search:', error)
+            console.error('Error en /bvl/search:', error)
             res.status(500).json({ error: error.message })
         }
     })
 
-    // GET /api/bvl/company/:rpjCode - Info completa de empresa
+    // GET /api/bvl/company/:rpjCode - Info completa de empresa desde caché
     r.get('/company/:rpjCode', async (req, res) => {
         try {
             const { rpjCode } = req.params
 
-            // Buscar por código exacto
-            const response = await request(`${BVL_API_BASE}/issuers/search`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    firstLetter: '',
-                    sectorCode: '',
-                    companyName: '' // Buscar todos y filtrar por código
-                })
-            })
-
-            if (response.statusCode !== 200) {
-                return res.status(404).json({ error: 'Empresa no encontrada' })
-            }
-
-            const data = await response.body.json()
-            const company = data.find(c => c.companyCode === rpjCode)
+            const company = db.prepare(`
+        SELECT 
+          rpj_code as rpjCode,
+          company_name as name,
+          sector_code as sectorCode,
+          sector_description as sector,
+          stock as tickers,
+          indices
+        FROM bvl_companies
+        WHERE rpj_code = ?
+      `).get(rpjCode)
 
             if (!company) {
                 return res.status(404).json({ error: 'Empresa no encontrada' })
             }
 
+            // Parsear JSON
             res.json({
-                rpjCode: company.companyCode,
-                name: company.companyName,
-                sector: company.sectorDescription,
-                sectorCode: company.sectorCode,
-                tickers: company.stock || [],
-                indices: company.index || []
+                ...company,
+                tickers: JSON.parse(company.tickers || '[]'),
+                indices: JSON.parse(company.indices || '[]')
             })
         } catch (error) {
-            console.error('Error en /api/bvl/company:', error)
+            console.error('Error en /bvl/company:', error)
             res.status(500).json({ error: error.message })
         }
     })
 
-    // GET /api/bvl/corporate-actions - Eventos corporativos
+    // GET /api/bvl/corporate-actions - Eventos corporativos desde caché
     r.get('/corporate-actions', async (req, res) => {
         try {
             const {
                 rpjCode,
                 page = 1,
-                size = 20,
-                type = 1  // 1 = Hechos de Importancia
+                size = 20
             } = req.query
 
-            const response = await request(`${BVL_API_BASE}/corporate-actions-announcements`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    page: parseInt(page),
-                    size: parseInt(size),
-                    search: '',
-                    type: parseInt(type)
+            const offset = (parseInt(page) - 1) * parseInt(size)
+
+            // Por ahora devolver array vacío ya que no tenemos eventos en caché
+            // TODO: Agregar script para importar eventos desde BVL API
+
+            if (!rpjCode) {
+                return res.json({
+                    totalElements: 0,
+                    totalPages: 0,
+                    events: []
                 })
+            }
+
+            const events = db.prepare(`
+        SELECT 
+          id,
+          rpj_code as rpjCode,
+          business_name as businessName,
+          event_date as date,
+          register_date as registerDate,
+          session,
+          event_types as types,
+          documents
+        FROM bvl_corporate_events
+        WHERE rpj_code = ?
+        ORDER BY event_date DESC
+        LIMIT ? OFFSET ?
+      `).all(rpjCode, parseInt(size), offset)
+
+            const total = db.prepare(`
+        SELECT COUNT(*) as count
+        FROM bvl_corporate_events
+        WHERE rpj_code = ?
+      `).get(rpjCode).count
+
+            // Parsear JSON fields
+            const formatted = events.map(e => ({
+                ...e,
+                types: JSON.parse(e.types || '[]'),
+                documents: JSON.parse(e.documents || '[]')
+            }))
+
+            res.json({
+                totalElements: total,
+                totalPages: Math.ceil(total / parseInt(size)),
+                events: formatted
+            })
+        } catch (error) {
+            console.error('Error en /bvl/corporate-actions:', error)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // GET /api/bvl/benefits/:rpjCode - Beneficios/Dividendos con caché lazy
+    r.get('/benefits/:rpjCode', async (req, res) => {
+        try {
+            const { rpjCode } = req.params
+
+            // 1. Primero buscar en caché local
+            const cached = db.prepare(`
+        SELECT 
+          ticker, isin, value_type, benefit_type as type,
+          amount, currency, record_date as recordDate,
+          payment_date as paymentDate, ex_date as exDate
+        FROM bvl_benefits
+        WHERE rpj_code = ?
+        ORDER BY payment_date DESC
+      `).all(rpjCode)
+
+            if (cached && cached.length > 0) {
+                console.log(`✅ Dividendos de ${rpjCode} desde caché (${cached.length})`)
+                return res.json({ benefits: cached, cached: true })
+            }
+
+            // 2. Si no está en caché, consultar BVL API
+            console.log(`🔍 Consultando dividendos de ${rpjCode} en BVL API...`)
+            const { request } = await import('undici')
+            const response = await request(`https://dataondemand.bvl.com.pe/v1/issuers/${rpjCode}/value`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
             })
 
             if (response.statusCode !== 200) {
-                return res.status(response.statusCode).json({
-                    error: 'Error al consultar eventos corporativos'
-                })
+                return res.status(404).json({ error: 'No se encontraron beneficios' })
             }
 
             const data = await response.body.json()
+            const benefits = []
 
-            // Filtrar por rpjCode si se proporciona
-            let events = data.content?.importantFacts || []
-            if (rpjCode) {
-                events = events.filter(e => e.rpjCode === rpjCode)
+            // 3. Extraer y guardar en caché
+            if (data.fixedValues && Array.isArray(data.fixedValues)) {
+                const insertBenefit = db.prepare(`
+          INSERT INTO bvl_benefits 
+          (rpj_code, ticker, isin, value_type, benefit_type, amount, currency, record_date, payment_date, ex_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+
+                const transaction = db.transaction((values) => {
+                    for (const value of values) {
+                        if (value.listBenefit && value.listBenefit.length > 0) {
+                            for (const benefit of value.listBenefit) {
+                                insertBenefit.run(
+                                    rpjCode,
+                                    value.nemonico || null,
+                                    value.isin || null,
+                                    value.valueType || null,
+                                    benefit.typeBenefit || 'Dividendo',
+                                    benefit.benefit || null,
+                                    benefit.currency || null,
+                                    benefit.recordDate || null,
+                                    benefit.paymentDate || null,
+                                    benefit.exDate || null
+                                )
+
+                                benefits.push({
+                                    ticker: value.nemonico,
+                                    isin: value.isin,
+                                    type: benefit.typeBenefit || 'Dividendo',
+                                    amount: benefit.benefit,
+                                    currency: benefit.currency,
+                                    recordDate: benefit.recordDate,
+                                    paymentDate: benefit.paymentDate,
+                                    exDate: benefit.exDate
+                                })
+                            }
+                        }
+                    }
+                })
+
+                transaction(data.fixedValues)
+                console.log(`💾 Guardados ${benefits.length} dividendos de ${rpjCode} en caché`)
             }
 
-            res.json({
-                totalElements: events.length,
-                totalPages: Math.ceil(events.length / parseInt(size)),
-                events: events.map(event => ({
-                    id: event.correlativeCodeBVL,
-                    rpjCode: event.rpjCode,
-                    businessName: event.businessName,
-                    date: event.sessionDate,
-                    registerDate: event.registerDate,
-                    session: event.session,
-                    types: event.codes?.map(c => ({
-                        code: c.codeHHII,
-                        description: c.descCodeHHII
-                    })) || [],
-                    documents: event.documents?.map(d => ({
-                        path: `https://www.bvl.com.pe${d.path}`,
-                        sequence: d.sequence
-                    })) || []
-                }))
-            })
+            res.json({ benefits, cached: false })
         } catch (error) {
-            console.error('Error en /api/bvl/corporate-actions:', error)
+            console.error('Error en /bvl/benefits:', error)
             res.status(500).json({ error: error.message })
         }
     })

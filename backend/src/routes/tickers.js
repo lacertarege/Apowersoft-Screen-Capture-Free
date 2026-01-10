@@ -110,15 +110,62 @@ export function tickersRouter(db) {
       return res.status(400).json({ error: 'Tipo de inversión no existe o está inactivo' })
     }
 
+    if (!['USD', 'PEN'].includes(moneda.toUpperCase())) {
+      return res.status(400).json({ error: 'Moneda debe ser USD o PEN' })
+    }
+
+    const tipoInvNum = Number(tipo_inversion_id)
+    if (!Number.isFinite(tipoInvNum) || tipoInvNum <= 0) {
+      return res.status(400).json({ error: 'tipo_inversion_id debe ser un número positivo' })
+    }
+
+    // Extraer exchange del body (opcional, default NYSE)
+    const exchange = req.body.exchange || 'NYSE'
+
     try {
-      const stmt = db.prepare('INSERT INTO tickers (ticker, nombre, moneda, tipo_inversion_id) VALUES (UPPER(?),?,?,?)')
-      const info = stmt.run(ticker.trim(), nombre.trim(), moneda.toUpperCase(), Number(tipo_inversion_id))
-      return res.status(201).json({ id: info.lastInsertRowid })
-    } catch (e) {
-      if (e.message.includes('UNIQUE constraint failed')) {
-        return res.status(400).json({ error: 'Ya existe un ticker con ese símbolo' })
+      // Si es BVL, intentar auto-vincular con datos BVL
+      let rpjCode = req.body.rpj_code || null
+
+      if (exchange === 'BVL' && !rpjCode) {
+        // Buscar en caché local por ticker
+        const bvlMatch = db.prepare(`
+          SELECT rpj_code 
+          FROM bvl_companies 
+          WHERE stock LIKE ?
+        `).get(`%"${ticker.toUpperCase()}"%`)
+
+        if (bvlMatch) {
+          rpjCode = bvlMatch.rpj_code
+          console.log(`✅ Auto-vinculado ${ticker} con RPJ: ${rpjCode}`)
+        } else {
+          console.log(`⚠️  Ticker BVL ${ticker} no encontrado en caché BVL`)
+        }
       }
-      return res.status(400).json({ error: e.message })
+
+      // Insertar ticker con rpj_code si existe
+      const stmt = db.prepare(`
+        INSERT INTO tickers (ticker, nombre, moneda, tipo_inversion_id, exchange, rpj_code, estado) 
+        VALUES (?, ?, ?, ?, ?, ?, 'activo')
+      `)
+      const info = stmt.run(
+        ticker.toUpperCase(),
+        nombre.trim(),
+        moneda.toUpperCase(),
+        tipoInvNum,
+        exchange,
+        rpjCode
+      )
+
+      const newId = info.lastInsertRowid
+      const created = db.prepare('SELECT * FROM tickers WHERE id = ?').get(newId)
+
+      return res.status(201).json({
+        ...created,
+        bvl_auto_linked: exchange === 'BVL' && rpjCode ? true : false
+      })
+    } catch (error) {
+      console.error('Error creando ticker:', error)
+      return res.status(400).json({ error: error.message })
     }
   })
 

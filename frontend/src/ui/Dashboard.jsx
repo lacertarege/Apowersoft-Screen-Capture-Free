@@ -5,6 +5,7 @@ import DualAxisLineChart from './DualAxisLineChart.jsx'
 import InvestmentProfitabilityTable from './InvestmentProfitabilityTable.jsx'
 import TWRMonthlyTable from './TWRMonthlyTable.jsx'
 import AnnualSummaryTable from './AnnualSummaryTable.jsx'
+import AnnualBarChart from './AnnualBarChart.jsx'
 
 const ChartControls = ({ range, setRange, currency, setCurrency, showRange = true }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -60,6 +61,10 @@ export default function Dashboard() {
   const [annualEvolutionData, setAnnualEvolutionData] = useState([])
   const [annualLoading, setAnnualLoading] = useState(true)
 
+  // Exchanges
+  const [currencyExchange, setCurrencyExchange] = useState('USD')
+  const [exchangeData, setExchangeData] = useState([])
+
   // Fetching
   useEffect(() => {
     fetch(`${API}/dashboard/series?range=${rangeAB}&currency=${currencyAB}`).then(r => r.json()).then(d => setDataAB(d.items || []))
@@ -111,6 +116,10 @@ export default function Dashboard() {
       .catch(() => setAnnualEvolutionData([]))
       .finally(() => setAnnualLoading(false))
   }, [])
+
+  useEffect(() => { // 2. Added useEffect for exchange
+    fetch(`${API}/dashboard/by-exchange?currency=${currencyExchange}`).then(r => r.json()).then(d => setExchangeData(d.items || []))
+  }, [currencyExchange])
 
   const SimpleLineChart = ({ series, currency, width = 800, height = 300, padding = 50 }) => {
     const [hoverPoint, setHoverPoint] = useState(null)
@@ -251,6 +260,7 @@ export default function Dashboard() {
 
   return (
     <div className="container-fluid">
+      {/* 1. Resumen Anual del Portafolio */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="flex-between" style={{ marginBottom: 12 }}>
           <h3 className="card-title">Resumen Anual del Portafolio</h3>
@@ -259,14 +269,13 @@ export default function Dashboard() {
         {annualLoading ? <div style={{ padding: '20px', textAlign: 'center' }}>Cargando resumen anual...</div> : <AnnualSummaryTable data={annualEvolutionData} />}
       </div>
 
+      {/* 2. Gráfico de Barras del Resumen Anual */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="flex-between">
-          <h3 className="card-title">Evolución Mensual del Portafolio</h3>
-          <div className="text-muted">Análisis detallado por mes</div>
+          <h3 className="card-title">Resumen Anual - Visualización</h3>
+          <div className="text-muted">Comparativa visual por año</div>
         </div>
-        {monthlyLoading ? <div style={{ padding: '40px', textAlign: 'center' }}><div style={{ display: 'inline-block', width: '40px', height: '40px', border: '4px solid #f3f4f6', borderTop: '4px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div><div style={{ marginTop: '16px', color: '#6b7280', fontSize: '14px' }}>Cargando datos...</div><style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style></div> :
-          <TWRMonthlyTable data={monthlyEvolutionData} currency={monthlyCurrency} onCurrencyChange={setMonthlyCurrency} />
-        }
+        {annualLoading ? <div style={{ padding: '20px', textAlign: 'center' }}>Cargando...</div> : <AnnualBarChart data={annualEvolutionData} />}
       </div>
 
       <div className="flex-between" style={{ marginBottom: 8 }}>
@@ -282,6 +291,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* 3. Inversión vs Valor */}
       <div className="card">
         <div className="flex-between">
           <h3 className="card-title">Inversión vs Valor</h3>
@@ -290,15 +300,18 @@ export default function Dashboard() {
         <SimpleLineChart series={seriesAB} currency={currencyAB} />
       </div>
 
+      {/* 4. Inversión vs Rendimiento */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="flex-between">
-          <h3 className="card-title">Rendimiento</h3>
-          <div className="text-muted">{firstDate} → {lastDate}</div>
+          <h3 className="card-title">Inversión vs Rendimiento</h3>
+          <div className="text-muted">Evolución temporal con doble eje</div>
         </div>
-        <ChartControls range={rangeR} setRange={setRangeR} currency={currencyR} setCurrency={setCurrencyR} />
-        <SimpleLineChart series={seriesR} currency={currencyR} />
+        <ChartControls range={rangeDual} setRange={setRangeDual} currency={currencyDual} setCurrency={setCurrencyDual} />
+        <DualAxisLineChart data={investmentProfitabilityData} currency={currencyDual} width={null} />
+        <InvestmentProfitabilityTable data={evolutionTableData} currency={tableCurrency} onCurrencyChange={setTableCurrency} />
       </div>
 
+      {/* 5. Inversiones por Plataforma */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="flex-between">
           <h3 className="card-title">Inversiones por Plataforma</h3>
@@ -308,6 +321,17 @@ export default function Dashboard() {
         <BarChart data={platformData} currency={currencyPlatform} />
       </div>
 
+      {/* 6. Inversiones por Exchange */}
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="flex-between">
+          <h3 className="card-title">Inversiones por Exchange</h3>
+          <div className="text-muted">Inversión vs Valor Actual</div>
+        </div>
+        <ChartControls showRange={false} currency={currencyExchange} setCurrency={setCurrencyExchange} />
+        <BarChart data={exchangeData} currency={currencyExchange} />
+      </div>
+
+      {/* 7. Inversiones por Tipo */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="flex-between">
           <h3 className="card-title">Inversiones por Tipo</h3>
@@ -317,14 +341,15 @@ export default function Dashboard() {
         <BarChart data={typeData} currency={currencyType} />
       </div>
 
+      {/* 8. Evolución Mensual del Portafolio */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="flex-between">
-          <h3 className="card-title">Inversión vs Rentabilidad</h3>
-          <div className="text-muted">Evolución temporal con doble eje</div>
+          <h3 className="card-title">Evolución Mensual del Portafolio</h3>
+          <div className="text-muted">Análisis detallado por mes</div>
         </div>
-        <ChartControls range={rangeDual} setRange={setRangeDual} currency={currencyDual} setCurrency={setCurrencyDual} />
-        <DualAxisLineChart data={investmentProfitabilityData} width={null} />
-        <InvestmentProfitabilityTable data={evolutionTableData} currency={tableCurrency} onCurrencyChange={setTableCurrency} />
+        {monthlyLoading ? <div style={{ padding: '40px', textAlign: 'center' }}><div style={{ display: 'inline-block', width: '40px', height: '40px', border: '4px solid #f3f4f6', borderTop: '4px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div><div style={{ marginTop: '16px', color: '#6b7280', fontSize: '14px' }}>Cargando datos...</div><style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style></div> :
+          <TWRMonthlyTable data={monthlyEvolutionData} currency={monthlyCurrency} onCurrencyChange={setMonthlyCurrency} />
+        }
       </div>
     </div>
   )

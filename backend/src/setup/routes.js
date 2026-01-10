@@ -8,6 +8,7 @@ import { configRouter } from '../routes/config.js'
 import { optionsRouter } from '../routes/options.js'
 import { dividendosRouter } from '../routes/dividendos.js'
 import { tiposInversionRouter } from '../routes/tiposInversion.js'
+import { bvlRouter } from '../routes/bvl.js'
 
 export function buildRoutes(app, db) {
   // Configuración CORS mejorada con paquete 'cors'
@@ -48,5 +49,6 @@ export function buildRoutes(app, db) {
   app.use('/options', optionsRouter(db))
   app.use('/dividendos', dividendosRouter(db))
   app.use('/tipos-inversion', tiposInversionRouter(db))
+  app.use('/bvl', bvlRouter(db))
   app.get('/health', (req, res) => res.json({ ok: true }))
 }
