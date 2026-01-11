@@ -1,0 +1,94 @@
+// NUEVO CÓDIGO PARA EL ENDPOINT sync-sunat EN config.js
+// Reemplazar desde la línea 185 (r.post('/tipo-cambio/sync-sunat'...) hasta antes del siguiente endpoint
+
+  r.post('/tipo-cambio/sync-sunat', async (req, res) => {
+    try {
+      console.log('[DECOLECTA] Iniciando sincronización...')
+
+      // Importar funciones
+      const { fetchSunatExchangeRates } = await import('../sources/sunat.js')
+      const { getLimaDate } = await import('../utils/date.js')
+
+      // Token
+      const apiToken = process.env.DECOLECTA_API_TOKEN || 'sk_12751.oph635WotcsmGvQNMQgwOlx1Yi7rHSwy'
+      
+      // Identificar fechas faltantes (últimos 30 días) - misma lógica que backfillFx.js
+      const hoyLima = getLimaDate()
+      const dates = db.prepare(`WITH RECURSIVE dates(d) AS (
+        SELECT DATE(?,'-30 day')
+        UNION ALL
+        SELECT DATE(d,'+1 day') FROM dates WHERE d < DATE(?)
+      ) SELECT d FROM dates WHERE d NOT IN (SELECT fecha FROM tipos_cambio)`).all(hoyLima, hoyLima).map(r => r.d)
+
+      if (dates.length === 0) {
+        console.log('[DECOLECTA] No hay fechas faltantes')
+        return res.json({ ok: true, inserted: 0, updated: 0, total: 0, message: 'No hay fechas faltantes' })
+      }
+
+      console.log(`[DECOLECTA] ${dates.length} fechas faltantes`)
+
+      // Agrupar por mes/año
+      const monthsToFetch = new Set()
+      dates.forEach(dateStr => {
+        const [year, month] = dateStr.split('-')
+        monthsToFetch.add(`${year}-${month}`)
+      })
+
+      console.log(`[DECOLECTA] Consultando ${monthsToFetch.size} mes(es)`)
+
+      // Obtener datos por mes
+      let items = []
+      for (const yearMonth of monthsToFetch) {
+        const [year, month] = yearMonth.split('-')
+        
+        try {
+          const monthItems = await fetchSunatExchangeRates(apiToken, null, parseInt(month), parseInt(year))
+          items = items.concat(monthItems)
+          console.log(`[DECOLECTA] ✓ ${monthItems.length} registros ${yearMonth}`)
+        } catch (error) {
+          console.error(`[DECOLECTA] ✗ Error ${yearMonth}:`, error.message)
+        }
+      }
+
+      if (items.length === 0) {
+        return res.status(404).json({ error: 'No se obtuvieron datos' })
+      }
+
+      // Filtrar solo fechas faltantes
+      const datesSet = new Set(dates)
+      items = items.filter(item => datesSet.has(item.fecha))
+
+      console.log(`[DECOLECTA] ${items.length} para insertar`)
+
+      // Insertar
+      const stmt = db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
+        ON CONFLICT(fecha) DO UPDATE SET usd_pen=excluded.usd_pen, fuente_api=excluded.fuente_api`)
+
+      let inserted = 0, updated = 0, errors = []
+
+      for (const item of items) {
+        const { fecha, usd_pen } = item
+        try {
+          const existing = db.prepare('SELECT fecha FROM tipos_cambio WHERE fecha = ?').get(fecha)
+          stmt.run(fecha, usd_pen, 'sunat')
+          if (existing) updated++
+          else inserted++
+        } catch (e) {
+          errors.push({ fecha, error: e.message })
+        }
+      }
+
+      console.log(`[DECOLECTA] Completado: ${inserted} insertados, ${updated} actualizados`)
+
+      res.json({
+        ok: true,
+        inserted,
+        updated,
+        total: items.length,
+        errors: errors.length > 0 ? errors : undefined
+      })
+    } catch (e) {
+      console.error('POST /config/tipo-cambio/sync-sunat error', e)
+      res.status(500).json({ error: e.message || 'Error sincronizando' })
+    }
+  })

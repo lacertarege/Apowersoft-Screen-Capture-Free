@@ -2,6 +2,7 @@ import cron from 'node-cron'
 import { updateDailyPricesJob } from '../jobs/updateDailyPrices.js'
 import { backfillFxJob } from '../jobs/backfillFx.js'
 import { updatePortfolioEvolutionJob } from '../jobs/updatePortfolioEvolution.js'
+import { updateBenchmarksJob } from '../jobs/updateBenchmarks.js'
 import { spawn } from 'node:child_process'
 import { getLimaDate } from '../utils/date.js'
 
@@ -32,6 +33,17 @@ export function startJobs(db) {
       console.error('Cron 06:00 error', e)
     }
   })
+
+  // 03:00 Lima time: actualizar caché de benchmarks
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      await updateBenchmarksJob(db)
+      console.log('Cron 03:00 executed: benchmarks actualizados')
+    } catch (e) {
+      console.error('Cron 03:00 error', e)
+    }
+  })
+
   // 02:30 Lima time: intentar rellenar históricos desde las compras más antiguas
   cron.schedule('30 2 * * *', async () => {
     try {

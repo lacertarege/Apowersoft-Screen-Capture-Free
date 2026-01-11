@@ -103,6 +103,22 @@ async function startServer() {
       logger.warn('No se pudo cargar job de evolución del portafolio:', e.message)
     }
 
+    // Warmup de caché de benchmarks al iniciar
+    try {
+      const { updateBenchmarksJob } = await import('./jobs/updateBenchmarks.js')
+        ; (async () => {
+          try {
+            await updateBenchmarksJob(db)
+            logger.info('Caché de benchmarks inicializado')
+          } catch (e) {
+            logger.warn('Error inicializando caché de benchmarks:', e.message)
+          }
+        })()
+    } catch (e) {
+      logger.warn('No se pudo cargar job de benchmarks:', e.message)
+    }
+
+
     const port = 3002 // Forzamos 3002 para coincidir con la configuración del frontend
     app.listen(port, () => {
       logger.info('Backend iniciado', { port, url: `http://localhost:${port}` })

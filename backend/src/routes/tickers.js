@@ -2,6 +2,7 @@ import express from 'express'
 import { fetchPriceForSymbol, searchSymbols } from '../sources/marketData.js'
 import { importHistoryRange } from '../jobs/importHistoryRange.js'
 import { getLimaDate } from '../utils/date.js'
+import { InvestmentService } from '../services/InvestmentService.js'
 
 // Helpers de fecha: solo días hábiles (UTC)
 function lastWeekday(dateStr) {
@@ -33,20 +34,54 @@ export function tickersRouter(db) {
         v.tipo_inversion_id,
         v.tipo_inversion_nombre,
         v.primera_compra,
-        v.importe_total,
-        v.cantidad_total,
         v.fecha,
         v.precio_reciente,
-        v.balance,
-        v.rendimiento,
-        v.rentabilidad
+        (SELECT COALESCE(SUM(monto), 0) FROM dividendos WHERE ticker_id = v.id) as total_dividends
       FROM v_resumen_empresas v
       WHERE v.ticker LIKE ? OR v.nombre LIKE ?
       ORDER BY v.ticker
       LIMIT ? OFFSET ?
     `).all(`%${q}%`, `%${q}%`, Number(pageSize), offset)
+
+    // Recalculate positions dynamically using Iterative CPP (Weighted Average Cost)
+    const processedRows = rows.map(row => {
+      const stats = InvestmentService.calculatePositionStats(db, row.id)
+
+      const cantidad_total = stats.cantidad
+      const importe_total = stats.totalInvertido // Qty * CPP (Rule A)
+
+      // 1. Ganancia No Realizada (Papel)
+      const balance = cantidad_total * (row.precio_reciente || 0)
+      const unrealizedGain = balance - importe_total
+
+      // 2. Ganancia Realizada (Capital Gains from Sales)
+      const realizedGain = stats.gananciaRealizada || 0
+
+      // 3. Dividendos (from View)
+      const dividends = row.total_dividends || 0
+
+      // 4. Retorno Total Combinado
+      const rendimiento = unrealizedGain + realizedGain + dividends
+
+      // 5. Rentabilidad % (Combined ROI)
+      // Denominator: Current Invested Capital (Rule A). If 0 (Closed), ROI is undefined/0.
+      let rentabilidad = 0
+      if (importe_total > 0) {
+        rentabilidad = rendimiento / importe_total
+      }
+
+      return {
+        ...row,
+        cantidad_total,
+        importe_total,
+        balance,
+        rendimiento,
+        rentabilidad
+      }
+    }).filter(row => row.cantidad_total > 0.000001) // Solo posiciones abiertas
+
     const total = db.prepare(`SELECT COUNT(*) as c FROM v_resumen_empresas v WHERE v.ticker LIKE ? OR v.nombre LIKE ?`).get(`%${q}%`, `%${q}%`).c
-    res.json({ items: rows, total })
+    res.json({ items: processedRows, total })
   })
 
   r.get('/:id', (req, res) => {
@@ -59,21 +94,80 @@ export function tickersRouter(db) {
 
   r.get('/:id/inversiones', (req, res) => {
     const id = Number(req.params.id)
-    const rows = db.prepare('SELECT * FROM inversiones WHERE ticker_id = ? ORDER BY fecha DESC').all(id)
-    res.json({ items: rows })
+
+    // 1. Get Investments
+    const investments = db.prepare('SELECT * FROM inversiones WHERE ticker_id = ?').all(id)
+
+    // 2. Get Dividends
+    const dividends = db.prepare('SELECT * FROM dividendos WHERE ticker_id = ?').all(id)
+
+    // 3. Format Dividends to look like Investments
+    const formattedDividends = dividends.map(d => ({
+      id: `div_${d.id}`, // Unique ID string to avoid collision with numeric investment IDs
+      original_id: d.id,
+      ticker_id: d.ticker_id,
+      fecha: d.fecha_pago || d.fecha, // Use payment date if available
+      importe: d.monto,
+      cantidad: 0, // No quantity change
+      tipo_operacion: 'DIVIDENDO',
+      plataforma: 'BVL', // Usually dividends come via broker but source is BVL/Company
+      realized_return: d.monto, // The whole dividend amount is realized gain
+      is_dividend: true
+    }))
+
+    // 4. Merge and Sort
+    const combined = [...investments, ...formattedDividends].sort((a, b) => {
+      // Sort by date DESC
+      if (a.fecha < b.fecha) return 1
+      if (a.fecha > b.fecha) return -1
+      // If same date, Investments usually come before Dividends? Or doesn't matter much.
+      return 0
+    })
+
+    res.json({ items: combined })
   })
 
   // Crear inversión para un ticker
   r.post('/:id/inversiones', (req, res) => {
     const id = Number(req.params.id)
-    const { fecha, importe, cantidad, plataforma } = req.body || {}
-    if (!id || !fecha || importe == null || cantidad == null) return res.status(400).json({ error: 'fecha, importe y cantidad requeridos' })
-    const nImp = Number(importe); const nCant = Number(cantidad)
-    if (!Number.isFinite(nImp) || !Number.isFinite(nCant) || nCant === 0) return res.status(400).json({ error: 'importe/cantidad inválidos' })
+    const { fecha, importe, cantidad, plataforma, tipo_operacion = 'INVERSION', origen_capital = 'FRESH_CASH' } = req.body || {}
+
+    if (!id || !fecha || importe == null || cantidad == null) {
+      return res.status(400).json({ error: 'fecha, importe y cantidad requeridos' })
+    }
+
+    const nImp = Number(importe)
+    const nCant = Number(cantidad)
+
+    if (!Number.isFinite(nImp) || !Number.isFinite(nCant) || nCant === 0) {
+      return res.status(400).json({ error: 'importe/cantidad inválidos' })
+    }
+
     const apertura = nImp / nCant
+
+    //Calculate realized_return for DESINVERSION operations
+    let realizedReturnValue = null
+    if (tipo_operacion === 'DESINVERSION') {
+      const cpp = InvestmentService.calculateWeightedAverageCost(db, id, fecha)
+      const realizedReturn = InvestmentService.calculateRealizedReturn(nImp, nCant, cpp)
+      realizedReturnValue = realizedReturn.amount
+    }
+
     try {
-      const stmt = db.prepare('INSERT INTO inversiones (ticker_id, fecha, importe, cantidad, apertura_guardada, plataforma) VALUES (?,?,?,?,?,?)')
-      const info = stmt.run(id, fecha, nImp, nCant, apertura, plataforma || null)
+      const stmt = db.prepare(
+        'INSERT INTO inversiones (ticker_id, fecha, importe, cantidad, apertura_guardada, plataforma, tipo_operacion, origen_capital, realized_return) VALUES (?,?,?,?,?,?,?,?,?)'
+      )
+      const info = stmt.run(
+        id,
+        fecha,
+        nImp,
+        nCant,
+        apertura,
+        plataforma || null,
+        tipo_operacion,
+        tipo_operacion === 'INVERSION' ? origen_capital : null,
+        realizedReturnValue
+      )
       return res.status(201).json({ id: info.lastInsertRowid })
     } catch (e) {
       return res.status(400).json({ error: e.message })

@@ -1,8 +1,10 @@
+
 import React, { useEffect, useState, useMemo } from 'react'
 import { API } from './config'
 import NumberCell from './NumberCell.jsx'
 import { fmtDateLima } from './utils'
 import NuevaInversionModal from './NuevaInversionModal.jsx'
+import NuevaDesinversionModal from './NuevaDesinversionModal.jsx'
 import EditarInversionModal from './EditarInversionModal.jsx'
 import { useInvestments } from '../hooks/useInvestments.js'
 import InvestmentChart from './InvestmentChart.jsx'
@@ -42,6 +44,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
 
   // Estados para los modales
   const [showNuevaInversion, setShowNuevaInversion] = useState(false)
+  const [showNuevaDesinversion, setShowNuevaDesinversion] = useState(false)
   const [showEditarInversion, setShowEditarInversion] = useState(false)
   const [inversionEditando, setInversionEditando] = useState(null)
 
@@ -75,19 +78,163 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
     return () => { cancelled = true }
   }, [tickerId])
 
-  const totals = useMemo(() => {
-    const imp = inversiones.reduce((a, x) => a + (Number(x.importe) || 0), 0)
-    const cant = inversiones.reduce((a, x) => a + (Number(x.cantidad) || 0), 0)
-    const avg = cant ? (imp / cant) : null
+  // Cálculos de posición actual
+  const posicionActual = useMemo(() => {
+    // Ordenar cronológicamente (ASC) para cálculo iterativo
+    // Nota: 'inversiones' viene normalmente en DESC (más reciente primero)
+    const sortedInv = [...inversiones].sort((a, b) => {
+      const da = new Date(a.fecha)
+      const db = new Date(b.fecha)
+      return da - db
+    })
 
-    // Calcular rendimiento y rentabilidad totales
+    let currentQty = 0
+    let currentCpp = 0
+
+    // Iterar aplicando Reglas de Oro
+    let totalRealizedGain = 0
+    const realizedGainsMap = {}
+
+    for (const inv of sortedInv) {
+      if (inv.is_dividend) continue // Dividendos no afectan qty ni cpp
+
+      const qty = Number(inv.cantidad || 0)
+      const amount = Number(inv.importe || 0)
+
+      // Tipo Inversión (Compra)
+      if (inv.tipo_operacion === 'INVERSION' || (!inv.tipo_operacion && !inv.is_dividend)) {
+        const prevCost = currentQty * currentCpp
+        const newCost = amount
+        currentQty += qty
+
+        // Regla 1: CPP se actualiza solo en COMPRA
+        // Regla 3: Si se viene de 0, CPP es precio de compra simple
+        if (currentQty > 0.000001) {
+          currentCpp = (prevCost + newCost) / currentQty
+        } else {
+          currentCpp = 0
+        }
+      }
+      // Tipo Desinversión (Venta)
+      else if (inv.tipo_operacion === 'DESINVERSION') {
+        const soldQty = qty // En la API viene positiva
+
+        // Regla B: Ganancia Realizada = (Precio Venta - CPP) * Cantidad
+        // Precio Venta Implícito = Importe Recibido / Cantidad Vendida
+        // Ganancia = Importe Recibido - (CPP * Cantidad Vendida)
+        const costBasis = soldQty * currentCpp
+        const proceeds = amount
+        const realized = proceeds - costBasis
+        totalRealizedGain += realized
+        realizedGainsMap[inv.id] = realized
+
+        currentQty -= soldQty
+
+        // Regla 2: CPP NO cambia al vender
+
+        // Regla 3: Reset total si llega a 0
+        if (currentQty <= 0.000001) {
+          currentQty = 0
+          currentCpp = 0
+        }
+      }
+    }
+
+    // Valores Finales
+    const cantidadActual = currentQty
+    const cpp = currentCpp
+
+    // Capital Total Invertido = Cantidad Restante * CPP Actual
+    const capitalInvertido = cantidadActual * cpp
+
+    // Valor de Mercado
     const precioActual = tickerSummary?.precio?.precio || 0
-    const valorActual = cant * precioActual
-    const rendimiento = valorActual - imp
-    const rentabilidad = imp > 0 ? (rendimiento / imp) : 0
+    const valorMercado = cantidadActual * precioActual
 
-    return { imp, cant, avg, rendimiento, rentabilidad }
+    // Ganancia No Realizada
+    const gananciaNoRealizada = valorMercado - capitalInvertido
+
+    // Rentabilidad No Realizada %
+    const rentabilidadNoRealizada = capitalInvertido > 0
+      ? (gananciaNoRealizada / capitalInvertido)
+      : 0
+
+    return {
+      cantidadActual,
+      cpp,
+      precioActual,
+      valorMercado,
+      gananciaNoRealizada,
+      rentabilidadNoRealizada,
+      capitalInvertido,
+      capitalInvertido,
+      totalRealizedGain,
+      realizedGainsMap
+    }
   }, [inversiones, tickerSummary?.precio?.precio])
+
+  // Totales del historial de transacciones
+  const totalesHistorial = useMemo(() => {
+    const inversionesTotales = inversiones
+      .filter(inv => (inv.tipo_operacion === 'INVERSION' || !inv.tipo_operacion) && !inv.is_dividend)
+      .reduce((sum, inv) => sum + Number(inv.importe || 0), 0)
+
+    const retirosTotales = inversiones
+      .filter(inv => inv.tipo_operacion === 'DESINVERSION')
+      .reduce((sum, inv) => sum + Number(inv.importe || 0), 0)
+
+    // Dividendos Totales
+    const dividendosTotales = inversiones
+      .filter(inv => inv.tipo_operacion === 'DIVIDENDO')
+      .reduce((sum, inv) => sum + Number(inv.importe || 0), 0)
+
+    const capitalNeto = inversionesTotales - retirosTotales
+
+    const gananciasVentas = posicionActual.totalRealizedGain || 0
+
+    // Ganancia Realizada Total = Beneficio Ventas + Dividendos
+    const gananciasRealizadas = gananciasVentas + dividendosTotales
+
+    return {
+      capitalInvertido: inversionesTotales,
+      capitalRetirado: retirosTotales,
+      capitalNeto,
+      gananciasRealizadas,
+      dividendosTotales,
+      saldoFinal: posicionActual.cantidadActual
+    }
+  }, [inversiones, posicionActual.cantidadActual])
+
+  // Inversiones con saldo acumulativo (desde la más antigua a la más reciente)
+  const inversionesConSaldo = useMemo(() => {
+    // Invertir el orden para calcular desde la más antigua
+    const inversionesOrdenadas = [...inversiones].reverse()
+
+    let saldoAcum = 0
+
+    const conSaldo = inversionesOrdenadas.map(inv => {
+      // Si es dividendo, delta es 0
+      let delta = 0
+      if (inv.tipo_operacion === 'INVERSION' || (!inv.tipo_operacion && !inv.is_dividend)) {
+        delta = Number(inv.cantidad || 0)
+      } else if (inv.tipo_operacion === 'DESINVERSION') {
+        delta = -Number(inv.cantidad || 0)
+      } else if (inv.tipo_operacion === 'DIVIDENDO') {
+        delta = 0
+      }
+
+      saldoAcum += delta
+
+      return {
+        ...inv,
+        delta,
+        saldo: saldoAcum
+      }
+    })
+
+    // Revertir de nuevo para mostrar más reciente primero en la UI
+    return conSaldo.reverse()
+  }, [inversiones])
 
   // Función separada para cargar inversiones
   const loadInversiones = async () => {
@@ -141,6 +288,28 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
     } else {
       // Mostrar error al usuario
       alert(`Error al crear la inversión: ${result.error}`)
+    }
+  }
+
+  // Función para crear nueva desinversión
+  const handleCrearDesinversion = async (desinversionData) => {
+    const result = await createInvestment(tickerId, desinversionData)
+
+    if (result.success) {
+      // Mostrar mensaje con rendimiento realizado si está disponible
+      if (result.data?.realized_return !== undefined) {
+        const msg = `Desinversión registrada exitosamente.\n\nRendimiento Realizado: ${new Intl.NumberFormat('es-PE', {
+          style: 'currency',
+          currency: ticker.moneda || 'USD'
+        }).format(result.data.realized_return)} (${result.data.realized_return_rate >= 0 ? '+' : ''}${result.data.realized_return_rate.toFixed(2)}%)`
+        alert(msg)
+      }
+
+      await loadInversiones()
+      setShowNuevaDesinversion(false)
+      if (onChanged) onChanged()
+    } else {
+      alert(`Error al crear la desinversión: ${result.error}`)
     }
   }
 
@@ -204,7 +373,16 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
             alignItems: 'flex-start',
             marginBottom: '20px',
             paddingBottom: '12px',
-            borderBottom: '1px solid #e5e7eb'
+            borderBottom: '1px solid #e5e7eb',
+            position: 'sticky',
+            top: '56px', // Altura del Navbar para evitar solapamiento
+            backgroundColor: '#ffffff',
+            zIndex: 90, // Menor que el navbar (1000) pero mayor que el contenido
+            paddingTop: '16px', // Add padding top to account for sticky
+            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', // Add shadow when sticky (it will always have it here, which is fine)
+            margin: '-16px -20px 20px -20px', // Negative margin to stretch full width if container has padding
+            paddingLeft: '20px',
+            paddingRight: '20px'
           }}>
             {/* Información del ticker (izquierda) */}
             <div>
@@ -290,7 +468,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
             </div>
           </div>
 
-          {/* Secciones BVL - Solo mostrar si el ticker tiene rpj_code */}
+          {/* Secciones BVL */}
           {ticker.rpj_code && (
             <>
               {/* Perfil BVL */}
@@ -447,22 +625,129 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
               canNavigatePrevious={canNavigatePrevious}
               canNavigateNext={canNavigateNext}
               onBack={onBack}
+              // Data for Right Panel (Resumen Financiero)
+              totalesHistorial={totalesHistorial}
+              posicionActual={posicionActual}
             />
           )}
 
-          {/* Botón Nueva Inversión */}
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+          {/* Card de Posición Actual */}
+          {inversiones.length > 0 && (
+            <div className="card" style={{ marginBottom: '20px', background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)', border: '2px solid #e5e7eb' }}>
+              <h4 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📊 Posición Actual
+                {posicionActual.cantidadActual === 0 && (
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    padding: '4px 10px',
+                    backgroundColor: '#fee2e2',
+                    color: '#991b1b',
+                    border: '1px solid #fca5a5',
+                    borderRadius: '12px',
+                    marginLeft: '8px',
+                    letterSpacing: '0.5px'
+                  }}>
+                    POSICIÓN CERRADA
+                  </span>
+                )}
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Cantidad Actual</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                    {posicionActual.cantidadActual.toFixed(4)} {ticker.tipo_inversion_id === 1 ? 'cuotas' : 'acciones'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Costo Promedio (CPP)</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                    <NumberCell value={posicionActual.cpp} currency={ticker.moneda} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Precio Actual</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                    <NumberCell value={posicionActual.precioActual} currency={ticker.moneda} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Valor de Mercado</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                    <NumberCell value={posicionActual.valorMercado} currency={ticker.moneda} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Ganancia No Realizada</div>
+                  <div style={{
+                    fontSize: '20px',
+                    fontWeight: '700',
+                    color: posicionActual.gananciaNoRealizada >= 0 ? '#059669' : '#dc2626'
+                  }}>
+                    <NumberCell value={posicionActual.gananciaNoRealizada} currency={ticker.moneda} />
+                    <span style={{ fontSize: '14px', marginLeft: '8px' }}>
+                      ({posicionActual.rentabilidadNoRealizada >= 0 ? '+' : ''}{(posicionActual.rentabilidadNoRealizada * 100).toFixed(2)}%)
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>💰 Capital Total Invertido</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                    <NumberCell value={posicionActual.capitalInvertido} currency={ticker.moneda} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>🎯 Ganancia Realizada Total</div>
+                  <div style={{
+                    fontSize: '20px',
+                    fontWeight: '700',
+                    color: totalesHistorial.gananciasRealizadas >= 0 ? '#059669' : '#dc2626'
+                  }}>
+                    <NumberCell value={totalesHistorial.gananciasRealizadas} currency={ticker.moneda} />
+                    {posicionActual.capitalInvertido > 0 && (
+                      <span style={{ fontSize: '14px', marginLeft: '8px', color: totalesHistorial.gananciasRealizadas >= 0 ? '#059669' : '#dc2626' }}>
+                        (ROI: {((totalesHistorial.gananciasRealizadas / posicionActual.capitalInvertido) * 100).toFixed(2)}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Botones Nueva Inversión y Desinversión */}
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button
+              onClick={() => setShowNuevaDesinversion(true)}
+              disabled={!posicionActual.cantidadActual || posicionActual.cantidadActual <= 0}
+              style={{
+                padding: '10px 16px',
+                fontSize: '14px',
+                background: posicionActual.cantidadActual > 0 ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' : '#e5e7eb',
+                color: posicionActual.cantidadActual > 0 ? 'white' : '#9ca3af',
+                border: posicionActual.cantidadActual > 0 ? '1px solid #ea580c' : '1px solid #d1d5db',
+                borderRadius: '6px',
+                cursor: posicionActual.cantidadActual > 0 ? 'pointer' : 'not-allowed',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              title={posicionActual.cantidadActual > 0 ? "Registrar desinversión" : "Sin stock disponible"}
+            >
+              ↓ Desinversión
+            </button>
             <button
               onClick={() => setShowNuevaInversion(true)}
               className="btn btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              + Nueva Inversión
+              Nueva Inversión
             </button>
           </div>
 
           <div className="card">
-            <h3 className="card-title">Inversiones</h3>
+            <h3 className="card-title">📝 Historial de Transacciones</h3>
             {inversiones.length === 0 ? (
               <div className="text-muted">Sin inversiones</div>
             ) : (
@@ -470,101 +755,193 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                 <table>
                   <thead>
                     <tr>
+                      <th>Operación</th>
                       <th>Fecha</th>
-                      <th style={{ textAlign: 'right' }}>Importe</th>
-                      <th style={{ textAlign: 'right' }}>Cantidad</th>
-                      <th style={{ textAlign: 'right' }}>Apertura</th>
-                      <th style={{ textAlign: 'right' }}>Rendimiento</th>
-                      <th style={{ textAlign: 'right' }}>Rentabilidad</th>
                       <th>Plataforma</th>
+                      <th style={{ textAlign: 'right' }}>Flujo de Caja</th>
+                      <th style={{ textAlign: 'right' }}>Cantidad (Δ)</th>
+                      <th style={{ textAlign: 'right' }}>Valor Cuota</th>
+                      <th style={{ textAlign: 'right' }}>Ganancia Realizada</th>
+                      <th style={{ textAlign: 'right' }}>Saldo (Unidades)</th>
                       <th style={{ textAlign: 'center' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {inversiones.map(inv => {
-                      // Calcular rendimiento y rentabilidad para cada inversión
-                      const precioActual = tickerSummary?.precio?.precio || 0
-                      const cantidad = Number(inv.cantidad || 0)
+                    {inversionesConSaldo.map(inv => {
                       const importe = Number(inv.importe || 0)
-                      const valorActual = cantidad * precioActual
-                      const rendimiento = valorActual - importe
-                      const rentabilidad = importe > 0 ? (rendimiento / importe) : 0
+                      const cantidad = Number(inv.cantidad || 0)
+                      const tipoOperacion = inv.tipo_operacion || 'INVERSION'
+                      const esDesinversion = tipoOperacion === 'DESINVERSION'
+                      const esDividendo = tipoOperacion === 'DIVIDENDO'
+
+                      // Flujo de caja con signo
+                      let flujoCaja = 0
+                      if (esDesinversion || esDividendo) {
+                        flujoCaja = importe // Money IN
+                      } else {
+                        flujoCaja = -importe // Money OUT
+                      }
 
                       return (
                         <tr key={inv.id}>
+                          <td>
+                            <span style={{
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              background: esDividendo
+                                ? 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' // Purple for Dividend
+                                : (esDesinversion
+                                  ? (inv.realized_return >= 0
+                                    ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)'
+                                    : 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)')
+                                  : 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)'),
+                              color: esDividendo
+                                ? '#7e22ce' // Purple text
+                                : (esDesinversion
+                                  ? (inv.realized_return >= 0 ? '#166534' : '#991b1b')
+                                  : '#1e40af'),
+                              border: esDividendo
+                                ? '1px solid #d8b4fe'
+                                : (esDesinversion
+                                  ? (inv.realized_return >= 0 ? '1px solid #86efac' : '1px solid #fca5a5')
+                                  : '1px solid #93c5fd'),
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              {esDividendo ? '💰 Dividendo' : (esDesinversion ? (inv.realized_return >= 0 ? '✅ Desinversión' : '⚠️ Desinversión') : '📈 Inversión')}
+                            </span>
+                          </td>
                           <td>{fmtDateLima(inv.fecha)}</td>
-                          <td style={{ textAlign: 'right' }}><NumberCell value={importe} currency={ticker.moneda} /></td>
-                          <td style={{ textAlign: 'right' }}>{cantidad.toFixed(4)}</td>
-                          <td style={{ textAlign: 'right' }}>{Number(inv.apertura_guardada || 0).toFixed(4)}</td>
-                          <td style={{
-                            textAlign: 'right',
-                            color: rendimiento > 0 ? 'green' : rendimiento < 0 ? 'red' : 'inherit'
-                          }}>
-                            <NumberCell value={rendimiento} currency={ticker.moneda} />
-                          </td>
-                          <td style={{
-                            textAlign: 'right',
-                            color: rentabilidad > 0 ? 'green' : rentabilidad < 0 ? 'red' : 'inherit'
-                          }}>
-                            {new Intl.NumberFormat('es-PE', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(rentabilidad)}
-                          </td>
                           <td>{inv.plataforma || '-'}</td>
+                          <td style={{
+                            textAlign: 'right',
+                            fontWeight: '600',
+                            color: (esDesinversion || esDividendo) ? '#059669' : '#dc2626'
+                          }}>
+                            {(esDesinversion || esDividendo) ? '+ ' : '- '}
+                            <NumberCell value={Math.abs(flujoCaja)} currency={ticker.moneda} />
+                          </td>
+                          <td style={{
+                            textAlign: 'right',
+                            fontWeight: '500',
+                            color: esDividendo ? '#6b7280' : (esDesinversion ? '#dc2626' : '#059669')
+                          }}>
+                            {esDividendo ? '-' : ((esDesinversion ? '- ' : '+ ') + cantidad.toFixed(4))}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {esDividendo ? '-' : <NumberCell value={Number(inv.apertura_guardada || 0)} currency={ticker.moneda} />}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {(esDesinversion || esDividendo) && inv.realized_return !== undefined ? (
+                              <span style={{
+                                fontWeight: '600',
+                                color: (esDesinversion ? (posicionActual.realizedGainsMap[inv.id] || 0) : inv.realized_return) >= 0 ? '#059669' : '#dc2626'
+                              }}>
+                                <NumberCell value={esDesinversion ? (posicionActual.realizedGainsMap[inv.id] || 0) : inv.realized_return} currency={ticker.moneda} />
+                              </span>
+                            ) : (
+                              <span style={{ color: '#9ca3af' }}>--</span>
+                            )}
+                          </td>
+                          <td style={{
+                            textAlign: 'right',
+                            fontWeight: '600',
+                            fontSize: '14px',
+                            color: '#1e293b'
+                          }}>
+                            {inv.saldo.toFixed(4)}
+                          </td>
                           <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => abrirEditarInversion(inv)}
-                              style={{
-                                background: 'none',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                padding: '4px 8px',
-                                marginRight: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px'
-                              }}
-                              title="Editar inversión"
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              onClick={() => handleEliminarInversion(inv)}
-                              style={{
-                                background: 'none',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                padding: '4px 8px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                color: '#dc2626'
-                              }}
-                              title="Eliminar inversión"
-                            >
-                              🗑️
-                            </button>
+                            {!esDividendo && (
+                              <>
+                                <button
+                                  onClick={() => abrirEditarInversion(inv)}
+                                  style={{
+                                    background: 'none',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    padding: '4px 8px',
+                                    marginRight: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                  title="Editar inversión"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => handleEliminarInversion(inv)}
+                                  style={{
+                                    background: 'none',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    padding: '4px 8px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    color: '#dc2626'
+                                  }}
+                                  title="Eliminar inversión"
+                                >
+                                  🗑️
+                                </button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       )
                     })}
                   </tbody>
                   <tfoot>
+                    <tr style={{ borderTop: '2px solid #1e293b', background: '#f9fafb' }}>
+                      <th colSpan="3" style={{ textAlign: 'left', padding: '12px 8px' }}>
+                        <strong>TOTALES</strong>
+                      </th>
+                      <th colSpan="6"></th>
+                    </tr>
                     <tr>
-                      <th>Total</th>
-                      <th style={{ textAlign: 'right' }}><NumberCell value={totals.imp} currency={ticker.moneda} /></th>
-                      <th style={{ textAlign: 'right' }}>{totals.cant.toFixed(4)}</th>
-                      <th style={{ textAlign: 'right' }}>{totals.avg != null ? totals.avg.toFixed(4) : '-'}</th>
-                      <th style={{
-                        textAlign: 'right',
-                        color: totals.rendimiento > 0 ? 'green' : totals.rendimiento < 0 ? 'red' : 'inherit'
-                      }}>
-                        <NumberCell value={totals.rendimiento} currency={ticker.moneda} />
-                      </th>
-                      <th style={{
-                        textAlign: 'right',
-                        color: totals.rentabilidad > 0 ? 'green' : totals.rentabilidad < 0 ? 'red' : 'inherit'
-                      }}>
-                        {new Intl.NumberFormat('es-PE', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totals.rentabilidad)}
-                      </th>
-                      <th></th>
-                      <th></th>
+                      <td colSpan="3" style={{ paddingLeft: '24px', fontWeight: '500' }}>Capital Invertido</td>
+                      <td style={{ textAlign: 'right', color: '#dc2626', fontWeight: '600' }}>
+                        <NumberCell value={totalesHistorial.capitalInvertido} currency={ticker.moneda} />
+                      </td>
+                      <td colSpan="5"></td>
+                    </tr>
+                    <tr>
+                      <td colSpan="3" style={{ paddingLeft: '24px', fontWeight: '500' }}>Capital Retirado</td>
+                      <td style={{ textAlign: 'right', color: '#059669', fontWeight: '600' }}>
+                        <NumberCell value={totalesHistorial.capitalRetirado} currency={ticker.moneda} />
+                      </td>
+                      <td colSpan="5"></td>
+                    </tr>
+                    <tr style={{ borderTop: '1px solid #e5e7eb' }}>
+                      <td colSpan="3" style={{ paddingLeft: '24px', fontWeight: '600' }}>Capital Neto</td>
+                      <td style={{ textAlign: 'right', fontWeight: '700', fontSize: '15px' }}>
+                        <span style={{ color: totalesHistorial.capitalNeto < 0 ? '#dc2626' : '#059669' }}>
+                          {totalesHistorial.capitalNeto < 0 ? '- ' : '+ '}
+                          <NumberCell value={Math.abs(totalesHistorial.capitalNeto)} currency={ticker.moneda} />
+                        </span>
+                      </td>
+                      <td colSpan="5"></td>
+                    </tr>
+                    <tr>
+                      <td colSpan="3" style={{ paddingLeft: '24px', fontWeight: '500' }}>Ganancias Realizadas</td>
+                      <td colSpan="3"></td>
+                      <td style={{ textAlign: 'right', fontWeight: '700', fontSize: '15px' }}>
+                        <span style={{ color: totalesHistorial.gananciasRealizadas >= 0 ? '#059669' : '#dc2626' }}>
+                          <NumberCell value={totalesHistorial.gananciasRealizadas} currency={ticker.moneda} />
+                        </span>
+                      </td>
+                      <td colSpan="2"></td>
+                    </tr>
+                    <tr style={{ background: '#f3f4f6', borderTop: '2px solid #1e293b' }}>
+                      <td colSpan="3" style={{ paddingLeft: '24px', fontWeight: '700', fontSize: '15px' }}>Saldo Final</td>
+                      <td colSpan="4"></td>
+                      <td style={{ textAlign: 'right', fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>
+                        {totalesHistorial.saldoFinal.toFixed(4)} {ticker.tipo_inversion_id === 1 ? 'cuotas' : 'acciones'}
+                      </td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -579,6 +956,12 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
         open={showNuevaInversion}
         onClose={() => setShowNuevaInversion(false)}
         onSave={handleCrearInversion}
+        empresa={ticker}
+      />
+      <NuevaDesinversionModal
+        open={showNuevaDesinversion}
+        onClose={() => setShowNuevaDesinversion(false)}
+        onSave={handleCrearDesinversion}
         empresa={ticker}
       />
       <EditarInversionModal

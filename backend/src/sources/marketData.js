@@ -222,60 +222,87 @@ export async function fetchDailyHistory(symbolOrObj, from, to) {
   const config = EXCHANGE_SYMBOLS[exchange] || EXCHANGE_SYMBOLS['NYSE']
   const attempts = []
 
-  // 1) API BVL Data (solo para exchange BVL)
-  if (exchange === 'BVL') {
-    console.log(`   → Intentando API oficial BVL (dataondemand.bvl.com.pe)`)
-    try {
-      const url = `https://dataondemand.bvl.com.pe/v1/issuers/stock?name=${encodeURIComponent(symbol)}&startDate=${from}&endDate=${to}`
-      const data = await fetchJson(url)
+  // 1) API BVL Data (PRIORIDAD 1 - SIEMPRE INTENTAR PRIMERO)
+  console.log(`   → Intentando API oficial BVL (dataondemand.bvl.com.pe) - Prioridad 1`)
+  try {
+    const url = `https://dataondemand.bvl.com.pe/v1/issuers/stock?name=${encodeURIComponent(symbol)}&startDate=${from}&endDate=${to}`
+    const data = await fetchJson(url)
 
-      if (Array.isArray(data) && data.length > 0) {
-        // Parsear respuesta de BVL - preferir close, luego average, luego yesterdayClose
-        const items = data.map(item => {
-          let precio = item.close && item.close > 0 ? item.close : null
-          if (!precio) precio = item.average && item.average > 0 ? item.average : null
-          if (!precio) precio = item.yesterdayClose && item.yesterdayClose > 0 ? item.yesterdayClose : null
+    if (Array.isArray(data) && data.length > 0) {
+      // Parsear respuesta de BVL - orden de prioridad mejorado
+      const items = data.map(item => {
+        // Prioridad: close > average > yesterdayClose > open
+        // MEJORADO: Aceptar cualquier valor > 0 (no solo close)
+        let precio = null
+        if (item.close && item.close > 0) precio = item.close
+        else if (item.average && item.average > 0) precio = item.average
+        else if (item.yesterdayClose && item.yesterdayClose > 0) precio = item.yesterdayClose
+        else if (item.open && item.open > 0) precio = item.open
 
-          return precio ? { fecha: item.date, precio } : null
-        }).filter(x => x !== null)
+        return precio ? { fecha: item.date, precio } : null
+      }).filter(x => x !== null)
 
-        if (items.length > 0) {
-          attempts.push({ source: 'bvl', status: 'ok', count: items.length, message: `${items.length} días desde BVL oficial` })
-          return { items, source: 'bvl:BVL', attempts }
-        } else {
-          attempts.push({ source: 'bvl', status: 'nodata', message: 'respuesta sin precios válidos' })
-        }
+      if (items.length > 0) {
+        attempts.push({ source: 'bvl', status: 'ok', count: items.length, message: `${items.length} días desde BVL oficial` })
+        console.log(`   ✅ BVL exitoso: ${items.length} días obtenidos`)
+        return { items, source: 'bvl:BVL', attempts }
       } else {
-        attempts.push({ source: 'bvl', status: 'nodata', message: 'respuesta vacía o sin datos' })
+        attempts.push({ source: 'bvl', status: 'nodata', message: 'respuesta sin precios válidos' })
+      }
+    } else {
+      attempts.push({ source: 'bvl', status: 'nodata', message: 'respuesta vacía o sin datos' })
+    }
+  } catch (e) {
+    attempts.push({ source: 'bvl', status: 'error', message: String(e.message || e) })
+  }
+
+  // 2) Yahoo Finance (PRIORIDAD 2 - Sin API key, más confiable)
+  const yahooSymbol = config.yahoo ? config.yahoo(symbol) : symbol
+  console.log(`   → Intentando Yahoo Finance: ${yahooSymbol} - Prioridad 2`)
+
+  const tryYahooFetch = async (sym, label = 'yahoo', host = 'query1.finance.yahoo.com') => {
+    const period1 = Math.floor(new Date(from + 'T00:00:00Z').getTime() / 1000)
+    const period2 = Math.floor(new Date(to + 'T23:59:59Z').getTime() / 1000)
+    const url = `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&includeAdjustedClose=true&period1=${period1}&period2=${period2}`
+
+    try {
+      const runner = async () => {
+        const data = await fetchJson(url, { headers: { referer: 'https://finance.yahoo.com' } })
+        const res = data?.chart?.result?.[0]
+        const ts = res?.timestamp
+        const adj = res?.indicators?.adjclose?.[0]?.adjclose
+        const close = res?.indicators?.quote?.[0]?.close
+        if (!Array.isArray(ts) || ts.length === 0) return { items: null }
+        const prices = Array.isArray(adj) && adj.length === ts.length ? adj : close
+        if (!Array.isArray(prices) || prices.length !== ts.length) return { items: null }
+        const items = ts.map((t, i) => ({
+          fecha: new Date(t * 1000).toISOString().slice(0, 10),
+          precio: prices[i]
+        })).filter(x => x.fecha >= from && x.fecha <= to && Number.isFinite(x.precio))
+        return { items }
+      }
+      const result = await pRetry(runner, { retries: 2, minTimeout: 700, factor: 2 })
+      if (result?.items && result.items.length) {
+        attempts.push({ source: label, status: 'ok', count: result.items.length, message: `${result.items.length} días en el rango` })
+        console.log(`   ✅ Yahoo exitoso: ${result.items.length} días obtenidos`)
+        return { items: result.items, source: 'yahoo', attempts }
+      } else {
+        attempts.push({ source: label, status: 'nodata', message: 'sin datos para el rango' })
       }
     } catch (e) {
-      attempts.push({ source: 'bvl', status: 'error', message: String(e.message || e) })
+      attempts.push({ source: label, status: 'error', message: String(e.message || e) })
     }
+    return null
   }
 
-  // 2) Intentar con Polygon aggregates 1/day
-  if (POLY_KEY) {
-    try {
-      const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${POLY_KEY}`
-      const data = await fetchJson(url)
-      if (data && Array.isArray(data.results) && data.results.length) {
-        const items = data.results.map(x => ({
-          fecha: new Date(x.t).toISOString().slice(0, 10),
-          precio: x.c
-        }))
-        attempts.push({ source: 'polygon', status: 'ok', count: items.length, message: `${items.length} días en el rango` })
-        return { items, source: 'polygon', attempts }
-      } else {
-        // Si Polygon responde con status distinto de OK, reportar como error para mejor diagnóstico
-        const status = (data && data.status) ? String(data.status) : 'nodata'
-        if (status && status !== 'OK') attempts.push({ source: 'polygon', status: 'error', message: status })
-        else attempts.push({ source: 'polygon', status: 'nodata', message: 'sin datos para el rango' })
-      }
-    } catch (e) { attempts.push({ source: 'polygon', status: 'error', message: String(e.message || e) }) }
-  } else {
-    attempts.push({ source: 'polygon', status: 'skipped', message: 'No API key' })
-  }
-  // 2) Fallback Alpha Vantage TIME_SERIES_DAILY_ADJUSTED (full) y filtrar rango
+  const y1 = await tryYahooFetch(yahooSymbol, `yahoo:${exchange}`, 'query1.finance.yahoo.com')
+  if (y1) return y1
+
+  const yAlt = await tryYahooFetch(yahooSymbol, `yahoo.alt:${exchange}`, 'query2.finance.yahoo.com')
+  if (yAlt) return yAlt
+
+  // 3) AlphaVantage (PRIORIDAD 3)
+  console.log(`   → Intentando AlphaVantage - Prioridad 3`)
   if (AV_KEY) {
     try {
       const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=full&apikey=${AV_KEY}`
@@ -298,58 +325,39 @@ export async function fetchDailyHistory(symbolOrObj, from, to) {
       } else {
         attempts.push({ source: 'alphavantage', status: 'nodata', message: 'respuesta sin serie diaria' })
       }
-    } catch (e) { attempts.push({ source: 'alphavantage', status: 'error', message: String(e.message || e) }) }
+    } catch (e) {
+      attempts.push({ source: 'alphavantage', status: 'error', message: String(e.message || e) })
+      console.log(`   ❌ AlphaVantage falló: ${e.message}`)
+    }
   } else {
     attempts.push({ source: 'alphavantage', status: 'skipped', message: 'No API key' })
   }
-  // 3) Fallback Yahoo Finance chart API (sin API key)
-  const period1 = Math.floor(new Date(from + 'T00:00:00Z').getTime() / 1000)
-  // Yahoo usa period2 exclusivo, sumamos un día para incluir 'to'
-  const period2 = Math.floor(new Date(to + 'T23:59:59Z').getTime() / 1000)
 
-  const buildYahooUrl = (host, sym) => `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&includeAdjustedClose=true&period1=${period1}&period2=${period2}`
-
-  const tryYahooFetch = async (sym, label = 'yahoo', host = 'query1.finance.yahoo.com') => {
-    const url = buildYahooUrl(host, sym)
+  // 4) Polygon (PRIORIDAD 4 - Última opción)
+  console.log(`   → Intentando Polygon - Prioridad 4`)
+  if (POLY_KEY) {
     try {
-      const runner = async () => {
-        const data = await fetchJson(url, { headers: { referer: 'https://finance.yahoo.com' } })
-        const res = data?.chart?.result?.[0]
-        const ts = res?.timestamp
-        const adj = res?.indicators?.adjclose?.[0]?.adjclose
-        const close = res?.indicators?.quote?.[0]?.close
-        if (!Array.isArray(ts) || ts.length === 0) return { items: null }
-        const prices = Array.isArray(adj) && adj.length === ts.length ? adj : close
-        if (!Array.isArray(prices) || prices.length !== ts.length) return { items: null }
-        const items = ts.map((t, i) => ({
-          fecha: new Date(t * 1000).toISOString().slice(0, 10),
-          precio: prices[i]
-        })).filter(x => x.fecha >= from && x.fecha <= to && Number.isFinite(x.precio))
-        return { items }
-      }
-      const result = await pRetry(runner, { retries: 2, minTimeout: 700, factor: 2 })
-      if (result?.items && result.items.length) {
-        attempts.push({ source: label, status: 'ok', count: result.items.length, message: `${result.items.length} días en el rango` })
-        return { items: result.items, source: 'yahoo', attempts }
+      const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${POLY_KEY}`
+      const data = await fetchJson(url)
+      if (data && Array.isArray(data.results) && data.results.length) {
+        const items = data.results.map(x => ({
+          fecha: new Date(x.t).toISOString().slice(0, 10),
+          precio: x.c
+        }))
+        attempts.push({ source: 'polygon', status: 'ok', count: items.length, message: `${items.length} días en el rango` })
+        console.log(`   ✅ Polygon exitoso: ${items.length} días obtenidos`)
+        return { items, source: 'polygon', attempts }
       } else {
-        attempts.push({ source: label, status: 'nodata', message: 'sin datos para el rango' })
+        const status = (data && data.status) ? String(data.status) : 'nodata'
+        if (status && status !== 'OK') attempts.push({ source: 'polygon', status: 'error', message: status })
+        else attempts.push({ source: 'polygon', status: 'nodata', message: 'sin datos para el rango' })
       }
     } catch (e) {
-      attempts.push({ source: label, status: 'error', message: String(e.message || e) })
+      attempts.push({ source: 'polygon', status: 'error', message: String(e.message || e) })
     }
-    return null
+  } else {
+    attempts.push({ source: 'polygon', status: 'skipped', message: 'No API key' })
   }
-
-  // Determinar símbolo correcto para Yahoo según exchange
-  const yahooSymbol = config.yahoo ? config.yahoo(symbol) : symbol
-  console.log(`   → Intentando Yahoo Finance con símbolo: ${yahooSymbol}`)
-
-  const y1 = await tryYahooFetch(yahooSymbol, `yahoo:${exchange}`, 'query1.finance.yahoo.com')
-  if (y1) return y1
-
-  // Host alterno
-  const yAlt = await tryYahooFetch(yahooSymbol, `yahoo.alt:${exchange}`, 'query2.finance.yahoo.com')
-  if (yAlt) return yAlt
 
   return { items: [], source: null, attempts }
 }

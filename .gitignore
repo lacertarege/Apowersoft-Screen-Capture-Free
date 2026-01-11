@@ -151,3 +151,27 @@ backups/
 
 # Archivos de respuesta y logs temporales
 response.txt
+
+# Scripts temporales y de utilidad puntual (no sincronizar)
+# Estos scripts son para acciones puntuales y debugging local
+backend/test-*.js
+backend/debug-*.js
+backend/check_*.js
+backend/verify*.js
+backend/query*.js
+backend/vincular*.js
+backend/update_*_ticker.js
+backend/clean_*.js
+backend/buscar_*.js
+backend/find_*.js
+backend/drop-*.js
+backend/start-safe.js
+backend/merge-databases.js
+backend/replace-endpoint.js
+backend/REPLACEMENT_*.js
+backend/*-safe.js
+
+# Mantener scripts esenciales sincronizados:
+# - backend/src/db/migrations/*.js (migraciones de schema)
+# - backend/src/jobs/*.js (jobs programados del sistema)
+# - Scripts de importación críticos si son parte del flujo normal

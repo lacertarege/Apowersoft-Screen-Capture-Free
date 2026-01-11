@@ -3,6 +3,7 @@ import NumberCell from './NumberCell.jsx'
 import TickerModal from './TickerModal.jsx'
 import EditTickerModal from './EditTickerModal.jsx'
 import NuevaInversionModal from './NuevaInversionModal.jsx'
+import NuevaDesinversionModal from './NuevaDesinversionModal.jsx'
 import TickersTable from './TickersTable.jsx'
 import DetalleTicker from './DetalleTicker.jsx'
 import RefreshModal from './RefreshModal.jsx'
@@ -35,9 +36,11 @@ export default function EmpresasView() {
   const [showNew, setShowNew] = useState(false)
   const [empresa, setEmpresa] = useState(null)
   const [investOpen, setInvestOpen] = useState(false)
+  const [desinvestOpen, setDesinvestOpen] = useState(false)
   const [detailId, setDetailId] = useState(null)
   const [presupuesto, setPresupuesto] = useState(null)
   const [activeTab, setActiveTab] = useState('PEN')
+  const [showClosed, setShowClosed] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [refreshModal, setRefreshModal] = useState({ open: false, loading: false, attempts: [], message: '', inserted: 0, source: null, title: '', steps: [], from: null, to: null })
@@ -112,6 +115,33 @@ export default function EmpresasView() {
       await fetchTickers() // Recargar lista
     } catch (err) {
       console.error('Error guardando inversión:', err)
+      alert(`Error: ${err.message}`)
+    }
+  }
+
+  function onOpenDesinvest(it) {
+    setEmpresa(it)
+    setDesinvestOpen(true)
+  }
+
+  const onSaveDesinvest = async (payload) => {
+    if (!empresa) return
+    try {
+      const response = await createInvestment(empresa.id, payload)
+
+      // Mostrar mensaje con rendimiento realizado si está disponible
+      if (response?.realized_return !== undefined) {
+        const msg = `Desinversión registrada exitosamente.\n\nRendimiento Realizado: ${new Intl.NumberFormat('es-PE', {
+          style: 'currency',
+          currency: empresa.moneda || 'USD'
+        }).format(response.realized_return)} (${response.realized_return_rate >= 0 ? '+' : ''}${response.realized_return_rate.toFixed(2)}%)`
+        alert(msg)
+      }
+
+      setDesinvestOpen(false)
+      await fetchTickers() // Recargar lista
+    } catch (err) {
+      console.error('Error guardando desinversión:', err)
       alert(`Error: ${err.message}`)
     }
   }
@@ -235,9 +265,21 @@ export default function EmpresasView() {
         </div>
       </div>
 
-      <div className="tabs" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <div className="tabs" style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
         <button className={`btn btn-sm ${activeTab === 'PEN' ? 'btn-primary' : ''}`} onClick={() => setActiveTab('PEN')}>Soles (PEN)</button>
         <button className={`btn btn-sm ${activeTab === 'USD' ? 'btn-primary' : ''}`} onClick={() => setActiveTab('USD')}>Dólares (USD)</button>
+
+        <div style={{ flex: 1 }}></div>
+
+        <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', color: '#64748b' }}>
+          <input
+            type="checkbox"
+            checked={showClosed}
+            onChange={(e) => setShowClosed(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          <span>Mostrar Historial</span>
+        </label>
       </div>
 
       {(() => {
@@ -247,8 +289,11 @@ export default function EmpresasView() {
           <>
             <TickersTable
               items={filtered}
+              currency={activeTab}
+              showClosed={showClosed}
               onDelete={onDeleteTicker}
               onOpenInvest={onOpenInvest}
+              onOpenDesinvest={onOpenDesinvest}
               onOpenDetail={(it) => setDetailId(it.id)}
               onUpdatePrice={onUpdatePrice}
               onEdit={onEditTickerOpen}
@@ -269,6 +314,7 @@ export default function EmpresasView() {
 
       <TickerModal open={showNew} onClose={() => setShowNew(false)} onSave={onSaveTicker} tipos={tipos} defaultMoneda={activeTab} />
       <NuevaInversionModal open={investOpen} onClose={() => setInvestOpen(false)} onSave={onSaveInvest} empresa={empresa} />
+      <NuevaDesinversionModal open={desinvestOpen} onClose={() => setDesinvestOpen(false)} onSave={onSaveDesinvest} empresa={empresa} />
       <EditTickerModal open={editOpen} onClose={() => { setEditOpen(false); setEditItem(null) }} onSave={onEditTickerSave} item={editItem} tipos={tipos} />
       <RefreshModal open={refreshModal.open} title={refreshModal.title} loading={refreshModal.loading} attempts={refreshModal.attempts} message={refreshModal.message} inserted={refreshModal.inserted} source={refreshModal.source} steps={refreshModal.steps} from={refreshModal.from} to={refreshModal.to} onClose={() => setRefreshModal(m => ({ ...m, open: false }))} />
     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 
-export default function DualAxisLineChart({ data, currency = 'USD', width = null, height = 400, padding = 50 }) {
+export default function DualAxisLineChart({ data, currency = 'USD', width = null, height = 400, padding = 50, dividends = [] }) {
   const [hoverPoint, setHoverPoint] = useState(null)
   const containerRef = useRef(null)
   const [containerWidth, setContainerWidth] = useState(width || 800)
@@ -67,6 +67,19 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
     return points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
   }
 
+  // Calculate dividend points
+  const dividendPoints = dividends.map(div => {
+    // Find matching index in data
+    const idx = data.findIndex(d => d.fecha === div.date)
+    if (idx === -1) return null
+    return {
+      idx,
+      x: xFor(idx),
+      y: yForRendimiento(data[idx].rendimientoAcumulado || 0),
+      amount: div.amount
+    }
+  }).filter(p => p !== null)
+
   const handleMouseMove = (e) => {
     const svg = e.currentTarget
     const rect = svg.getBoundingClientRect()
@@ -105,9 +118,9 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
           const y = yForInversion(minInversion + ratio * inversionRange)
           return <line key={`in-${ratio}`} x1={paddingLeft} y1={y} x2={chartWidth - paddingRight} y2={y} stroke="#f3f4f6" strokeWidth="1" strokeDasharray="2,2" />
         })}
-        <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="2" />
-        <line x1={chartWidth - paddingRight} y1={paddingTop} x2={chartWidth - paddingRight} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="2" />
-        <line x1={paddingLeft} y1={height - paddingBottom} x2={chartWidth - paddingRight} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="2" />
+        <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="1" />
+        <line x1={chartWidth - paddingRight} y1={paddingTop} x2={chartWidth - paddingRight} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="1" />
+        <line x1={paddingLeft} y1={height - paddingBottom} x2={chartWidth - paddingRight} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="1" />
         {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const val = minInversion + ratio * inversionRange
           return <text key={`l-${ratio}`} x={paddingLeft - 10} y={yForInversion(val) + 4} fontSize="11" fill="#4b5563" textAnchor="end">{formatValue(val)}</text>
@@ -124,8 +137,16 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
           }
           return null
         })}
-        <path d={createPath(inversionPoints)} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
-        <path d={createPath(rendimientoPoints)} fill="none" stroke="#10b981" strokeWidth="1.5" strokeDasharray="5,3" />
+
+        {/* Lines with Updated Styles */}
+        <path d={createPath(inversionPoints)} fill="none" stroke="#000000" strokeWidth="1" strokeDasharray="3,3" />
+        <path d={createPath(rendimientoPoints)} fill="none" stroke="#10b981" strokeWidth="1" />
+
+        {/* Dividend Markers */}
+        {dividendPoints.map((p, i) => (
+          <circle key={`div-${i}`} cx={p.x} cy={p.y} r={2} fill="#a855f7" stroke="white" strokeWidth={1} />
+        ))}
+
         {hoverPoint !== null && (
           <g>
             <rect x={Math.min(chartWidth - 190, Math.max(10, xFor(hoverPoint) - 90))} y={20} width={180} height={85} fill="rgba(0,0,0,0.85)" rx="6" />
@@ -144,8 +165,8 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
         <text x={chartWidth - 15} y={height / 2} fontSize="12" fill="#374151" fontWeight="700" transform={`rotate(90, ${chartWidth - 15}, ${height / 2})`} textAnchor="middle">Rendimiento ({currency})</text>
       </svg>
       <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '16px', height: '3px', backgroundColor: '#3b82f6' }}></div><span>Inversión ({currency})</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '16px', height: '3px', backgroundColor: '#10b981', borderTop: '1px dashed #10b981' }}></div><span>Rendimiento ({currency})</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '16px', height: '1px', backgroundColor: '#000000', borderTop: '1px dashed #000000' }}></div><span>Inversión ({currency})</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '16px', height: '1px', backgroundColor: '#10b981' }}></div><span>Rendimiento ({currency})</span></div>
       </div>
     </div>
   )

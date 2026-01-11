@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [rangeAB, setRangeAB] = useState('all')
   const [currencyAB, setCurrencyAB] = useState('USD')
   const [dataAB, setDataAB] = useState([])
+  const [dividendsAB, setDividendsAB] = useState([])
 
   // 2. Rendimiento
   const [rangeR, setRangeR] = useState('all')
@@ -47,6 +48,7 @@ export default function Dashboard() {
   const [rangeDual, setRangeDual] = useState('all')
   const [currencyDual, setCurrencyDual] = useState('USD')
   const [investmentProfitabilityData, setInvestmentProfitabilityData] = useState([])
+  const [dividendsDual, setDividendsDual] = useState([])
 
   // Agregado por moneda (Tabla invert-rentab)
   const [evolutionTableData, setEvolutionTableData] = useState([])
@@ -67,7 +69,12 @@ export default function Dashboard() {
 
   // Fetching
   useEffect(() => {
-    fetch(`${API}/dashboard/series?range=${rangeAB}&currency=${currencyAB}`).then(r => r.json()).then(d => setDataAB(d.items || []))
+    fetch(`${API}/dashboard/series?range=${rangeAB}&currency=${currencyAB}`)
+      .then(r => r.json())
+      .then(d => {
+        setDataAB(d.items || [])
+        setDividendsAB(d.dividends || [])
+      })
   }, [rangeAB, currencyAB])
 
   useEffect(() => {
@@ -83,7 +90,10 @@ export default function Dashboard() {
   }, [currencyType])
 
   useEffect(() => {
-    fetch(`${API}/dashboard/investment-vs-profitability?range=${rangeDual}&currency=${currencyDual}`).then(r => r.json()).then(d => setInvestmentProfitabilityData(d.items || []))
+    fetch(`${API}/dashboard/investment-vs-profitability?range=${rangeDual}&currency=${currencyDual}`).then(r => r.json()).then(d => {
+      setInvestmentProfitabilityData(d.items || [])
+      setDividendsDual(d.dividends || [])
+    })
   }, [rangeDual, currencyDual])
 
   useEffect(() => {
@@ -121,7 +131,7 @@ export default function Dashboard() {
     fetch(`${API}/dashboard/by-exchange?currency=${currencyExchange}`).then(r => r.json()).then(d => setExchangeData(d.items || []))
   }, [currencyExchange])
 
-  const SimpleLineChart = ({ series, currency, width = 800, height = 300, padding = 50 }) => {
+  const SimpleLineChart = ({ series, currency, dividends = [], width = 800, height = 300, padding = 50 }) => {
     const [hoverPoint, setHoverPoint] = useState(null)
     const svgRef = React.useRef(null)
 
@@ -178,17 +188,43 @@ export default function Dashboard() {
     const xTickIndices = n > 10 ? [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor(3 * n / 4), n - 1] : Array.from({ length: n }, (_, i) => i)
     const xTicks = xTickIndices.map(i => ({ i, date: series[0].points[i].date }))
 
+    // Spread logic: Assuming series[0] is Invertido and series[1] is Valor, or checking names
+    const valorSeries = series.find(s => s.name === 'Valor')
+    const invertidoSeries = series.find(s => s.name === 'Invertido')
+
+    let spreadPath = ''
+    if (valorSeries && invertidoSeries) {
+      const vPoints = valorSeries.points.map((p, i) => `${xFor(i)},${yFor(p.y)}`)
+      const iPoints = invertidoSeries.points.map((p, i) => `${xFor(i)},${yFor(p.y)}`)
+      spreadPath = [...vPoints, ...iPoints.reverse()].join(' ')
+    }
+
     return (
-      <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} onMouseMove={handleMouseMove} onMouseLeave={() => setHoverPoint(null)} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} onMouseMove={handleMouseMove} onMouseLeave={() => setHoverPoint(null)} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
         {yTicks.map((v, idx) => (
           <g key={idx}>
             <line x1={paddingLeft} y1={yFor(v)} x2={width - paddingRight} y2={yFor(v)} stroke="#f1f5f9" strokeWidth="1" />
             <text x={paddingLeft - 8} y={yFor(v) + 4} textAnchor="end" fontSize="10" fill="#94a3b8">{formatValue(v)}</text>
           </g>
         ))}
+
+        {/* Spread Area */}
+        {spreadPath && (
+          <path d={`M ${spreadPath} Z`} fill="rgba(16, 185, 129, 0.1)" stroke="none" />
+        )}
+
         {series.map((s) => (
-          <polyline key={s.name} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round" points={s.points.map((p, i) => `${xFor(i)},${yFor(p.y)}`).join(' ')} />
+          <polyline
+            key={s.name}
+            fill="none"
+            stroke={s.color === '#3b82f6' && s.name === 'Invertido' ? '#000000' : s.color}
+            strokeWidth="1.25"
+            strokeLinejoin="round"
+            strokeDasharray={s.name === 'Invertido' ? "4,4" : ""}
+            points={s.points.map((p, i) => `${xFor(i)},${yFor(p.y)}`).join(' ')}
+          />
         ))}
+
         {xTicks.map((tick, idx) => {
           const dateObj = new Date(tick.date)
           const d = String(dateObj.getUTCDate()).padStart(2, '0')
@@ -198,46 +234,91 @@ export default function Dashboard() {
             <text key={`x-${idx}`} x={xFor(tick.i)} y={height - paddingBottom + 20} textAnchor="middle" fontSize="10" fill="#666">{`${d}.${m}.${y}`}</text>
           )
         })}
+
         <text x={15} y={height / 2} textAnchor="middle" fontSize="12" fill="#374151" fontWeight="600" transform={`rotate(-90, 15, ${height / 2})`}>Valor ({currency})</text>
+
+        {/* Legend */}
         <g transform={`translate(${paddingLeft + 20}, ${paddingTop})`}>
-          {series.map((s, idx) => (
-            <g key={s.name} transform={`translate(${idx * 120}, 0)`}>
-              <line x1="0" y1="0" x2="20" y2="0" stroke={s.color} strokeWidth="2.5" />
-              <text x="25" y="4" fontSize="11" fill="#374151">{s.name}</text>
-            </g>
-          ))}
+          {/* Invertido Legend */}
+          <g transform={`translate(0, 0)`}>
+            <line x1="0" y1="0" x2="20" y2="0" stroke="#000000" strokeWidth="1.25" strokeDasharray="4,4" />
+            <text x="25" y="4" fontSize="11" fill="#374151">Inversión Acumulada</text>
+          </g>
+          {/* Valor Legend */}
+          <g transform={`translate(140, 0)`}>
+            <line x1="0" y1="0" x2="20" y2="0" stroke="#10b981" strokeWidth="1.25" />
+            <text x="25" y="4" fontSize="11" fill="#374151">Valor Actual</text>
+          </g>
+          {/* Dividendo Legend */}
+          <g transform={`translate(240, 0)`}>
+            <circle cx="10" cy="0" r="2" fill="#a855f7" />
+            <text x="25" y="4" fontSize="11" fill="#374151">Dividendos</text>
+          </g>
         </g>
+
+        {/* Dividend Markers */}
+        {dividends.map((div, i) => {
+          // Find x position from date
+          // Dividends array dates might not exactly match series dates if gaps, but usually they do in daily series.
+          // Find closest series point index
+          if (!valorSeries) return null
+          const divDate = new Date(div.date)
+          // Assuming series are sorted by date
+          // Find index
+          const idx = valorSeries.points.findIndex(p => p.date === div.date)
+          if (idx === -1) return null
+
+          const cx = xFor(idx)
+          const cy = yFor(valorSeries.points[idx].y)
+
+          return (
+            <circle key={`div-mark-${i}`} cx={cx} cy={cy} r="2" fill="#a855f7" stroke="white" strokeWidth="1" />
+          )
+        })}
+
         {hoverPoint !== null && (
           <>
             <line x1={xFor(hoverPoint)} y1={paddingTop} x2={xFor(hoverPoint)} y2={height - paddingBottom} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="5,5" />
             {series.map((s, sIdx) => (
-              <circle key={`hover-${sIdx}`} cx={xFor(hoverPoint)} cy={yFor(s.points[hoverPoint].y)} r="5" fill={s.color} stroke="white" strokeWidth="2" />
+              <circle key={`hover-${sIdx}`} cx={xFor(hoverPoint)} cy={yFor(s.points[hoverPoint].y)} r="2.5" fill={s.name === 'Invertido' ? '#000000' : s.color} stroke="white" strokeWidth="2" />
             ))}
             {(() => {
               const tooltipX = xFor(hoverPoint)
-              const tooltipWidth = 180
-              const tooltipHeight = 20 + series.length * 22 + 20
+              const tooltipWidth = 200
+              const pointDate = series[0].points[hoverPoint].date
+              const divOnDate = dividends.find(d => d.date === pointDate)
+
+              const tooltipHeight = 20 + series.length * 22 + (divOnDate ? 25 : 0) + 20
+
               let finalX = tooltipX + 10
               if (finalX + tooltipWidth > width - paddingRight) finalX = tooltipX - tooltipWidth - 10
               const finalY = paddingTop + 60
-              const point = series[0].points[hoverPoint]
-              const dateObj = new Date(point.date)
+              const dateObj = new Date(pointDate)
               const d = String(dateObj.getUTCDate()).padStart(2, '0')
               const m = String(dateObj.getUTCMonth() + 1).padStart(2, '0')
               const y = String(dateObj.getUTCFullYear()).slice(-2)
               const dateLabel = `${d}.${m}.${y}`
+
               return (
                 <g>
                   <rect x={finalX + 2} y={finalY + 2} width={tooltipWidth} height={tooltipHeight} fill="rgba(0,0,0,0.15)" rx="6" />
                   <rect x={finalX} y={finalY} width={tooltipWidth} height={tooltipHeight} fill="white" stroke="#e5e7eb" strokeWidth="1.5" rx="6" />
                   <text x={finalX + 10} y={finalY + 16} fontSize="11" fill="#6b7280" fontWeight="600">{dateLabel}</text>
+
                   {series.map((s, idx) => (
                     <g key={`tooltip-${idx}`}>
-                      <circle cx={finalX + 10} cy={finalY + 35 + idx * 22} r="3" fill={s.color} />
-                      <text x={finalX + 20} y={finalY + 39 + idx * 22} fontSize="11" fill="#4b5563">{s.name}:</text>
+                      <circle cx={finalX + 10} cy={finalY + 35 + idx * 22} r="1.5" fill={s.name === 'Invertido' ? '#000000' : s.color} />
+                      <text x={finalX + 20} y={finalY + 39 + idx * 22} fontSize="11" fill="#4b5563">{s.name === 'Invertido' ? 'Cap. Externo' : s.name}:</text>
                       <text x={finalX + tooltipWidth - 10} y={finalY + 39 + idx * 22} textAnchor="end" fontSize="11" fill="#111827" fontWeight="700">{formatFullValue(s.points[hoverPoint].y)}</text>
                     </g>
                   ))}
+
+                  {divOnDate && (
+                    <g transform={`translate(0, ${series.length * 22 + 5})`}>
+                      <text x={finalX + 10} y={finalY + 35} fontSize="11" fill="#a855f7" fontWeight="600">💰 Dividendos:</text>
+                      <text x={finalX + tooltipWidth - 10} y={finalY + 35} textAnchor="end" fontSize="11" fill="#a855f7" fontWeight="700">{formatFullValue(divOnDate.amount)}</text>
+                    </g>
+                  )}
                 </g>
               )
             })()}
@@ -251,6 +332,7 @@ export default function Dashboard() {
     { name: 'Invertido', color: '#3b82f6', points: dataAB.map(d => ({ date: d.fecha, y: d.inversionUsd })) },
     { name: 'Valor', color: '#10b981', points: dataAB.map(d => ({ date: d.fecha, y: d.balanceUsd })) }
   ]
+
   const seriesR = [
     { name: 'Valor', color: '#8b5cf6', points: dataR.map(d => ({ date: d.fecha, y: d.balanceUsd })) }
   ]
@@ -297,7 +379,7 @@ export default function Dashboard() {
           <h3 className="card-title">Inversión vs Valor</h3>
         </div>
         <ChartControls range={rangeAB} setRange={setRangeAB} currency={currencyAB} setCurrency={setCurrencyAB} />
-        <SimpleLineChart series={seriesAB} currency={currencyAB} />
+        <SimpleLineChart series={seriesAB} currency={currencyAB} dividends={dividendsAB} />
       </div>
 
       {/* 4. Inversión vs Rendimiento */}
@@ -307,7 +389,7 @@ export default function Dashboard() {
           <div className="text-muted">Evolución temporal con doble eje</div>
         </div>
         <ChartControls range={rangeDual} setRange={setRangeDual} currency={currencyDual} setCurrency={setCurrencyDual} />
-        <DualAxisLineChart data={investmentProfitabilityData} currency={currencyDual} width={null} />
+        <DualAxisLineChart data={investmentProfitabilityData} dividends={dividendsDual} currency={currencyDual} width={null} />
         <InvestmentProfitabilityTable data={evolutionTableData} currency={tableCurrency} onCurrencyChange={setTableCurrency} />
       </div>
 

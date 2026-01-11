@@ -1,8 +1,22 @@
+
 import React, { useMemo, useEffect, useState, useRef } from 'react'
 import { fmtDateLima, fmtCurr } from './utils'
 import { API } from './config'
 
-export default function InvestmentChart({ inversiones, ticker, currentPrice, onPreviousTicker, onNextTicker, canNavigatePrevious, canNavigateNext, onBack }) {
+export default function InvestmentChart({
+  inversiones,
+  ticker,
+  currentPrice,
+  // Navigation props
+  onPreviousTicker,
+  onNextTicker,
+  canNavigatePrevious,
+  canNavigateNext,
+  onBack,
+  // Data props from parent (Unified Source)
+  totalesHistorial,
+  posicionActual
+}) {
   const [historicos, setHistoricos] = useState([])
   const [loadingHistoricos, setLoadingHistoricos] = useState(true)
   const [checkingGaps, setCheckingGaps] = useState(false)
@@ -13,7 +27,7 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
   // Cargar precios históricos
   useEffect(() => {
     if (!ticker?.id) return
-    
+
     const loadHistoricos = async () => {
       setLoadingHistoricos(true)
       try {
@@ -30,135 +44,134 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
         setLoadingHistoricos(false)
       }
     }
-    
+
     loadHistoricos()
   }, [ticker?.id])
-
-  // Función para verificar y llenar huecos de precios
-  const checkAndFillPriceGaps = async () => {
-    if (!ticker?.id || !inversiones.length) return
-    
-    setCheckingGaps(true)
-    setGapStatus('🔍 Verificando fechas faltantes...')
-    
-    try {
-      // Encontrar la fecha de la primera inversión
-      const primeraInversion = inversiones.reduce((min, inv) => {
-        const fechaInv = new Date(inv.fecha)
-        return fechaInv < min ? fechaInv : min
-      }, new Date(inversiones[0].fecha))
-      
-      // Verificar precios desde la primera inversión
-      const fromDate = primeraInversion.toISOString().split('T')[0]
-      
-      setGapStatus(`📅 Verificando desde ${fromDate}...`)
-      
-      // Llamar al endpoint de refresh con from_date
-      const response = await fetch(`${API}/tickers/${ticker.id}/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from_date: fromDate })
-      })
-      
-      if (response.ok) {
-        const result = await response.json()
-        setGapStatus(`✅ ${result.message || 'Precios verificados y actualizados'}`)
-        
-        // Recargar históricos
-        const newResponse = await fetch(`${API}/historicos/${ticker.id}?from=1970-01-01`)
-        if (newResponse.ok) {
-          const data = await newResponse.json()
-          const items = data.items || []
-          items.sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
-          setHistoricos(items)
-        }
-      } else {
-        setGapStatus('❌ Error al verificar precios')
-      }
-    } catch (error) {
-      console.error('Error al verificar huecos:', error)
-      setGapStatus('❌ Error al verificar precios')
-    } finally {
-      setCheckingGaps(false)
-      // Limpiar el estado después de 5 segundos
-      setTimeout(() => setGapStatus(null), 5000)
-    }
-  }
 
   // Procesar datos para el gráfico
   const chartData = useMemo(() => {
     if (!inversiones.length || !historicos.length) return []
 
-    // Ordenar inversiones por fecha
+    // Ordenar inversiones por fecha cronológica
     const sortedInversiones = [...inversiones].sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
-    
+
     // Encontrar la primera inversión
     const primeraInversion = new Date(sortedInversiones[0].fecha)
-    
+
     // Filtrar históricos desde la primera inversión
     const historicosRelevantes = historicos.filter(h => new Date(h.fecha) >= primeraInversion)
-    
-    // Crear puntos de datos
+
+    // --- HELPER PARA CALCULAR ESTADO EN UNA FECHA DETERMINADA ---
+    // Implementa: Iterative CPP & Rule A (Reset on 0)
+    const getPortfolioStateAt = (cutoffDate) => {
+      let qty = 0
+      let cpp = 0
+
+      for (const inv of sortedInversiones) {
+        if (new Date(inv.fecha) > cutoffDate) break // Stop if transaction is in future
+
+        const esDesinversion = inv.tipo_operacion === 'DESINVERSION'
+        const esDividendo = inv.tipo_operacion === 'DIVIDENDO'
+        const esReinversion = inv.origen_capital === 'REINVERSION'
+        const amount = Number(inv.importe) || 0
+        const opQty = Number(inv.cantidad) || 0
+
+        if (esDividendo) continue // Dividend not affecting inventory cost directly here (unless reinversion, treated as Buy)
+
+        if (esDesinversion) {
+          // Venta: Reduce Qty, CPP mantiene constante
+          qty -= opQty
+          if (qty <= 0.000001) {
+            qty = 0
+            cpp = 0 // Reset Rule
+          }
+        } else {
+          // Compra (Inversion o Reinversion)
+          const oldCost = qty * cpp
+          const newCost = amount // Costo de esta compra
+          qty += opQty
+          if (qty > 0) {
+            cpp = (oldCost + newCost) / qty
+          }
+        }
+      }
+      return { qty, cpp, capitalInvertido: qty * cpp }
+    }
+
+
     const dataPoints = []
-    
-    // Procesar cada fecha histórica
+
+    // 1. PUNTOS HISTÓRICOS (Diarios)
     historicosRelevantes.forEach(historico => {
       const fechaHistorico = new Date(historico.fecha)
-      
-      
-      // Calcular cantidad e importe acumulado hasta esta fecha
-      let cantidadHastaFecha = 0
-      let importeHastaFecha = 0
-      
-      sortedInversiones.forEach(inv => {
-        if (new Date(inv.fecha) <= fechaHistorico) {
-          cantidadHastaFecha += inv.cantidad
-          importeHastaFecha += inv.importe
-        }
+      const state = getPortfolioStateAt(fechaHistorico)
+
+      const valor = historico.precio * state.qty
+
+      dataPoints.push({
+        fecha: fechaHistorico,
+        importe: state.capitalInvertido, // Now tracking Inventory Cost
+        valor: valor,
+        rendimiento: valor - state.capitalInvertido,
+        cantidadAcumulada: state.qty,
+        esHistorico: true,
+        esInversion: false, esDesinversion: false, esDividendo: false, esReinversion: false, esActual: false
       })
-      
-      
-      // Solo agregar si hay inversiones hasta esta fecha
-      if (cantidadHastaFecha > 0) {
-        const valor = historico.precio * cantidadHastaFecha
-        const rendimiento = valor - importeHastaFecha
-        
-        
+    })
+
+    // 2. MARCADORES DE OPERACIÓN (Exact Date)
+    sortedInversiones.forEach(inv => {
+      const fechaInv = new Date(inv.fecha)
+      // Find historical price closest to this op
+      const historicoMasCercano = historicosRelevantes.reduce((closest, h) => {
+        const diffCurrent = Math.abs(new Date(h.fecha) - fechaInv)
+        const diffClosest = closest ? Math.abs(new Date(closest.fecha) - fechaInv) : Infinity
+        return diffCurrent < diffClosest ? h : closest
+      }, null)
+
+      if (historicoMasCercano) {
+        // Calculate state INCLUDING this transaction
+        const state = getPortfolioStateAt(fechaInv)
+        const valor = historicoMasCercano.precio * state.qty
+
         dataPoints.push({
-          fecha: fechaHistorico,
-          importe: importeHastaFecha,
+          fecha: fechaInv,
+          importe: state.capitalInvertido,
           valor: valor,
-          rendimiento: rendimiento,
-          cantidadAcumulada: cantidadHastaFecha,
-          esHistorico: true,
-          esInversion: false,
-          esActual: false
+          rendimiento: valor - state.capitalInvertido,
+          cantidadAcumulada: state.qty,
+          esHistorico: false,
+          esInversion: inv.tipo_operacion === 'INVERSION' && inv.origen_capital !== 'REINVERSION',
+          esDesinversion: inv.tipo_operacion === 'DESINVERSION',
+          esDividendo: inv.tipo_operacion === 'DIVIDENDO',
+          esReinversion: inv.origen_capital === 'REINVERSION',
+          esActual: false,
+          montoOperacion: Number(inv.importe) || 0
         })
       }
     })
-    
-    // Agregar punto actual (último precio disponible)
+
+    // 3. PUNTO ACTUAL (Last known price)
     const ultimoHistorico = historicosRelevantes[historicosRelevantes.length - 1]
-    if (ultimoHistorico && sortedInversiones.length > 0) {
-      const totalCantidad = sortedInversiones.reduce((sum, inv) => sum + inv.cantidad, 0)
-      const totalImporte = sortedInversiones.reduce((sum, inv) => sum + inv.importe, 0)
-      const valorActual = ultimoHistorico.precio * totalCantidad
-      const rendimientoActual = valorActual - totalImporte
-      
+    if (ultimoHistorico) {
+      // Use props directly for the final point to ensure 100% match with "Posición Actual" card
+      const finalQty = posicionActual?.cantidadActual || 0
+      const finalCapital = posicionActual?.capitalInvertido || 0
+      const finalValor = posicionActual?.valorMercado || (ultimoHistorico.precio * finalQty)
+
       dataPoints.push({
-        fecha: new Date(ultimoHistorico.fecha),
-        importe: totalImporte,
-        valor: valorActual,
-        rendimiento: rendimientoActual,
-        cantidadAcumulada: totalCantidad,
-        esHistorico: false,
-        esInversion: false,
+        fecha: new Date(ultimoHistorico.fecha), // Or new Date(), but aligning with history line is cleaner
+        importe: finalCapital,
+        valor: finalValor,
+        rendimiento: finalValor - finalCapital,
+        cantidadAcumulada: finalQty,
+        esHistorico: false, esInversion: false, esDesinversion: false, esDividendo: false, esReinversion: false,
         esActual: true
       })
     }
-    
+
     return dataPoints.sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
-  }, [inversiones, historicos])
+  }, [inversiones, historicos, posicionActual])
 
   // Configuración del gráfico
   const margin = { top: 20, right: 20, bottom: 60, left: 80 }
@@ -180,42 +193,35 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
   const getX = (fecha) => margin.left + ((new Date(fecha) - minFecha) / rangeFecha) * chartWidth
   const getY = (valor) => margin.top + chartHeight - ((valor - minValor) / rangeValor) * chartHeight
 
-  // Generar líneas
+  // Generar líneas y áreas
   const importeLine = chartData.map(d => `${getX(d.fecha)},${getY(d.importe)}`).join(' ')
   const valorLine = chartData.map(d => `${getX(d.fecha)},${getY(d.valor)}`).join(' ')
 
-  // Formatear valores para tooltip
-  const formatFullValue = (val) => {
-    return new Intl.NumberFormat('es-PE', {
-      style: 'currency',
-      currency: ticker?.moneda || 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(val)
-  }
+  // Generar área de sombra (Spread)
+  const spreadPath = [
+    ...chartData.map(d => `${getX(d.fecha)},${getY(d.valor)}`),
+    ...chartData.slice().reverse().map(d => `${getX(d.fecha)},${getY(d.importe)}`)
+  ].join(' ')
 
-  // Formatear valores para eje Y
+  // Formatear valores
+  const formatFullValue = (val) => new Intl.NumberFormat('es-PE', { style: 'currency', currency: ticker?.moneda || 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
   const formatYValue = (val) => {
-    if (Math.abs(val) >= 1000000) {
-      return `${(val/1000000).toFixed(1)}M`
-    } else if (Math.abs(val) >= 1000) {
-      return `${(val/1000).toFixed(1)}K`
-    }
+    if (Math.abs(val) >= 1000000) return `${(val / 1000000).toFixed(1)}M`
+    if (Math.abs(val) >= 1000) return `${(val / 1000).toFixed(1)}K`
     return val.toFixed(0)
   }
 
-  // Manejar movimiento del mouse
+  // Mouse handling
   const handleMouseMove = (e) => {
     if (!svgRef.current || chartData.length === 0) return
     const svg = svgRef.current
     const rect = svg.getBoundingClientRect()
     const scaleX = width / rect.width
     const x = (e.clientX - rect.left) * scaleX
-    
-    // Encontrar el punto más cercano
+
+    // Find closest point
     let closestIdx = -1
     let minDist = Infinity
-    
     for (let i = 0; i < chartData.length; i++) {
       const pointX = getX(chartData[i].fecha)
       const dist = Math.abs(x - pointX)
@@ -224,569 +230,189 @@ export default function InvestmentChart({ inversiones, ticker, currentPrice, onP
         closestIdx = i
       }
     }
-    
-    if (closestIdx >= 0) {
-      setHoverPoint(closestIdx)
-    } else {
-      setHoverPoint(null)
-    }
-  }
-  
-  const handleMouseLeave = () => {
-    setHoverPoint(null)
+    setHoverPoint(closestIdx >= 0 ? closestIdx : null)
   }
 
-  if (loadingHistoricos) {
-    return (
-      <div style={{ margin: '20px 0', textAlign: 'center', padding: '40px' }}>
-        <div style={{ 
-          display: 'inline-block',
-          width: '40px',
-          height: '40px',
-          border: '4px solid #f3f4f6',
-          borderTop: '4px solid #3b82f6',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }}></div>
-        <p style={{ marginTop: '16px', color: '#6b7280' }}>Cargando datos históricos...</p>
-      </div>
-    )
-  }
-
-  // Debug: Log de datos para verificar que se están cargando
-  console.log('InvestmentChart Debug:', {
-    chartData: chartData.length,
-    inversiones: inversiones.length,
-    historicos: historicos.length,
-    minFecha,
-    maxFecha,
-    minValor,
-    maxValor,
-    rangeFecha,
-    rangeValor
-  })
-
-  // Si no hay datos para mostrar, mostrar mensaje
-  if (chartData.length === 0) {
-    return (
-      <div style={{ margin: '20px 0', textAlign: 'center', padding: '40px' }}>
-        <p style={{ color: '#6b7280' }}>No hay datos suficientes para mostrar el gráfico</p>
-        <p style={{ color: '#9ca3af', fontSize: '14px' }}>
-          Inversiones: {inversiones.length}, Históricos: {historicos.length}
-        </p>
-      </div>
-    )
-  }
+  if (loadingHistoricos) return <div style={{ textAlign: 'center', padding: 40 }}>Cargando datos históricos...</div>
+  if (chartData.length === 0) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Datos insuficientes para el gráfico</div>
 
   return (
     <div style={{ margin: '20px 0' }}>
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-      
-      {/* Estado de verificación de huecos */}
-      {gapStatus && (
-        <div style={{
-          marginBottom: '12px',
-          padding: '8px 12px',
-          backgroundColor: gapStatus.includes('✅') ? '#f0f9ff' : 
-                          gapStatus.includes('❌') ? '#fef2f2' : '#fef3c7',
-          border: `1px solid ${gapStatus.includes('✅') ? '#0ea5e9' : 
-                                gapStatus.includes('❌') ? '#ef4444' : '#f59e0b'}`,
-          borderRadius: '6px',
-          fontSize: '13px',
-          color: gapStatus.includes('✅') ? '#0c4a6e' : 
-                 gapStatus.includes('❌') ? '#991b1b' : '#92400e'
-        }}>
-          {gapStatus}
-        </div>
-      )}
-      
-      {/* Layout de dos columnas: Gráfico + Resumen Financiero */}
+      {/* Layout */}
       <div style={{ display: 'flex', gap: '20px', marginTop: '16px' }}>
-        {/* Gráfico (columna izquierda) */}
         <div style={{ flex: 2 }}>
-          <div style={{ 
-            backgroundColor: 'white',
-            border: '1px solid #e2e8f0',
-            borderRadius: '8px',
-            padding: '16px'
-          }}>
-            <svg 
-              ref={svgRef}
-              width={width} 
-              height={height} 
-              style={{ display: 'block', margin: '0 auto', cursor: 'crosshair' }}
-              onMouseMove={handleMouseMove}
-              onMouseLeave={handleMouseLeave}
-            >
-              {/* Fondo del gráfico */}
-              <rect
-                x={margin.left}
-                y={margin.top}
-                width={chartWidth}
-                height={chartHeight}
-                fill="white"
-                stroke="#e2e8f0"
-                strokeWidth={1}
-              />
-              
-              {/* Etiquetas del eje Y con grid horizontal */}
+          <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px' }}>
+            <svg ref={svgRef} width={width} height={height} style={{ display: 'block', margin: '0 auto', cursor: 'crosshair' }} onMouseMove={handleMouseMove} onMouseLeave={() => setHoverPoint(null)}>
+              {/* Background */}
+              <rect x={margin.left} y={margin.top} width={chartWidth} height={chartHeight} fill="white" stroke="#e2e8f0" strokeWidth={1} />
+
+              {/* Grid Y */}
               {[...Array(5)].map((_, i) => {
                 const y = margin.top + (chartHeight / 4) * i
                 const value = maxValor - (maxValor - minValor) * (i / 4)
                 return (
                   <g key={`y-${i}`}>
-                    <line
-                      x1={margin.left}
-                      y1={y}
-                      x2={margin.left + chartWidth}
-                      y2={y}
-                      stroke="#e5e7eb"
-                      strokeWidth="1"
-                      strokeDasharray="4,4"
-                    />
-                    <text
-                      x={margin.left - 10}
-                      y={y + 4}
-                      textAnchor="end"
-                      fontSize="11"
-                      fill="#64748b"
-                    >
-                      {formatYValue(value)}
-                    </text>
+                    <line x1={margin.left} y1={y} x2={margin.left + chartWidth} y2={y} stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4,4" />
+                    <text x={margin.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">{formatYValue(value)}</text>
                   </g>
                 )
               })}
-              
-              {/* Etiquetas del eje X */}
-              {chartData.filter((_, i) => i % Math.ceil(chartData.length / 4) === 0 || i === chartData.length - 1).map((d, index) => (
-                <text
-                  key={`x-label-${index}`}
-                  x={getX(d.fecha)}
-                  y={margin.top + chartHeight + 20}
-                  textAnchor="middle"
-                  fontSize="11"
-                  fill="#64748b"
-                >
+
+              {/* X Labels */}
+              {chartData.filter((_, i) => i % Math.max(1, Math.floor(chartData.length / 5)) === 0 || i === chartData.length - 1).map((d, index) => (
+                <text key={`x-${index}`} x={getX(d.fecha)} y={margin.top + chartHeight + 20} textAnchor="middle" fontSize="11" fill="#64748b">
                   {fmtDateLima(d.fecha)}
                 </text>
               ))}
-              
-              {/* Línea de inversión (importe acumulado) */}
-              <polyline
-                points={importeLine}
-                fill="none"
-                stroke="#3b82f6"
-                strokeWidth={3}
-                strokeDasharray="5,5"
-              />
-              
-              {/* Línea de valor actual (verde) */}
-              <polyline
-                points={valorLine}
-                fill="none"
-                stroke="#10b981"
-                strokeWidth={3}
-              />
-              
-              {/* Puntos de inversión (azules) */}
-              {chartData.filter(d => d.esInversion).map((d, index) => (
-                <circle
-                  key={`inv-${index}`}
-                  cx={getX(d.fecha)}
-                  cy={getY(d.valor)}
-                  r={5}
-                  fill="#3b82f6"
-                  stroke="white"
-                  strokeWidth={2}
-                />
+
+              {/* Spread Area (Green path showing profit zone visually) */}
+              <path d={`M ${spreadPath} Z`} fill="rgba(16, 185, 129, 0.1)" stroke="none" />
+
+              {/* Lines */}
+              {/* Línea de Inversión Acumulada (External Cap): Black Dotted */}
+              <polyline points={importeLine} fill="none" stroke="#000000" strokeWidth={1} strokeDasharray="3,3" />
+              {/* Línea de Valor Actual (Green) */}
+              <polyline points={valorLine} fill="none" stroke="#10b981" strokeWidth={1} />
+
+              {/* Markers */}
+              {/* Inversión (Fresh Capital): Blue */}
+              {chartData.filter(d => d.esInversion).map((d, i) => (
+                <circle key={`inv-${i}`} cx={getX(d.fecha)} cy={getY(d.valor)} r={2} fill="#3b82f6" stroke="white" strokeWidth={1} />
               ))}
-              
-              {/* Puntos históricos intermedios (grises pequeños) */}
-              {chartData.filter(d => d.esHistorico).map((d, index) => (
-                <circle
-                  key={`hist-${index}`}
-                  cx={getX(d.fecha)}
-                  cy={getY(d.valor)}
-                  r={2}
-                  fill="#6b7280"
-                  stroke="white"
-                  strokeWidth={1}
-                />
+              {/* Reinversión: Cyan (Nuevo) */}
+              {chartData.filter(d => d.esReinversion).map((d, i) => (
+                <circle key={`reinv-${i}`} cx={getX(d.fecha)} cy={getY(d.valor)} r={2} fill="#0ea5e9" stroke="white" strokeWidth={1} />
               ))}
-              
-              {/* Punto actual */}
-              {chartData.filter(d => d.esActual).map((d, index) => (
-                <circle
-                  key={`current-${index}`}
-                  cx={getX(d.fecha)}
-                  cy={getY(d.valor)}
-                  r={6}
-                  fill="#10b981"
-                  stroke="white"
-                  strokeWidth={3}
-                />
+              {/* Desinversión: Orange */}
+              {chartData.filter(d => d.esDesinversion).map((d, i) => (
+                <circle key={`des-${i}`} cx={getX(d.fecha)} cy={getY(d.valor)} r={2} fill="#f97316" stroke="white" strokeWidth={1} />
+              ))}
+              {/* Dividendo: Purple */}
+              {chartData.filter(d => d.esDividendo).map((d, i) => (
+                <circle key={`div-${i}`} cx={getX(d.fecha)} cy={getY(d.valor)} r={2} fill="#a855f7" stroke="white" strokeWidth={1} />
               ))}
 
-              {/* Tooltip interactivo */}
-              {hoverPoint !== null && chartData[hoverPoint] && (
-                <>
-                  {/* Línea vertical */}
-                  <line 
-                    x1={getX(chartData[hoverPoint].fecha)} 
-                    y1={margin.top} 
-                    x2={getX(chartData[hoverPoint].fecha)} 
-                    y2={margin.top + chartHeight}
-                    stroke="#94a3b8"
-                    strokeWidth="1.5"
-                    strokeDasharray="5,5"
-                  />
-                  
-                  {/* Punto destacado en línea de inversión */}
-                  <circle 
-                    cx={getX(chartData[hoverPoint].fecha)} 
-                    cy={getY(chartData[hoverPoint].importe)} 
-                    r="5" 
-                    fill="#3b82f6"
-                    stroke="white"
-                    strokeWidth="2"
-                  />
-                  
-                  {/* Punto destacado en línea de valor */}
-                  <circle 
-                    cx={getX(chartData[hoverPoint].fecha)} 
-                    cy={getY(chartData[hoverPoint].valor)} 
-                    r="5" 
-                    fill="#10b981"
-                    stroke="white"
-                    strokeWidth="2"
-                  />
-                  
-                  {/* Tooltip card */}
-                  {(() => {
-                    const tooltipX = getX(chartData[hoverPoint].fecha)
-                    const tooltipWidth = 200
-                    const tooltipHeight = 180
-                    let finalX = tooltipX + 10
-                    
-                    // Si está muy a la derecha, mostrarlo a la izquierda
-                    if (finalX + tooltipWidth > width - margin.right) {
-                      finalX = tooltipX - tooltipWidth - 10
-                    }
-                    
-                    const finalY = margin.top + 20
-                    const point = chartData[hoverPoint]
-                    const date = new Date(point.fecha)
-                    const dateLabel = date.toLocaleDateString('es-PE', { 
-                      day: '2-digit', 
-                      month: 'short',
-                      year: 'numeric'
-                    })
-                    
-                    return (
-                      <g>
-                        {/* Sombra del tooltip */}
-                        <rect 
-                          x={finalX + 2} 
-                          y={finalY + 2} 
-                          width={tooltipWidth} 
-                          height={tooltipHeight}
-                          fill="rgba(0,0,0,0.15)"
-                          rx="6"
-                        />
-                        
-                        {/* Fondo del tooltip */}
-                        <rect 
-                          x={finalX} 
-                          y={finalY} 
-                          width={tooltipWidth} 
-                          height={tooltipHeight}
-                          fill="white"
-                          stroke="#e5e7eb"
-                          strokeWidth="1.5"
-                          rx="6"
-                        />
-                        
-                        {/* Fecha */}
-                        <text 
-                          x={finalX + 12} 
-                          y={finalY + 18} 
-                          fontSize="11" 
-                          fill="#6b7280"
-                          fontWeight="600"
-                        >
-                          {dateLabel}
-                        </text>
-                        
-                        {/* Inversión Acumulada */}
-                        <circle
-                          cx={finalX + 12}
-                          cy={finalY + 38}
-                          r="3"
-                          fill="#3b82f6"
-                        />
-                        <text 
-                          x={finalX + 20} 
-                          y={finalY + 42} 
-                          fontSize="10" 
-                          fill="#374151"
-                        >
-                          Inversión:
-                        </text>
-                        <text 
-                          x={finalX + tooltipWidth - 12} 
-                          y={finalY + 42} 
-                          fontSize="10" 
-                          fill="#111827"
-                          fontWeight="600"
-                          textAnchor="end"
-                        >
-                          {formatFullValue(point.importe)}
-                        </text>
-                        
-                        {/* Valor Actual */}
-                        <circle
-                          cx={finalX + 12}
-                          cy={finalY + 60}
-                          r="3"
-                          fill="#10b981"
-                        />
-                        <text 
-                          x={finalX + 20} 
-                          y={finalY + 64} 
-                          fontSize="10" 
-                          fill="#374151"
-                        >
-                          Valor:
-                        </text>
-                        <text 
-                          x={finalX + tooltipWidth - 12} 
-                          y={finalY + 64} 
-                          fontSize="10" 
-                          fill="#111827"
-                          fontWeight="600"
-                          textAnchor="end"
-                        >
-                          {formatFullValue(point.valor)}
-                        </text>
-                        
-                        {/* Precio del valor en esa fecha */}
-                        <text 
-                          x={finalX + 12} 
-                          y={finalY + 84} 
-                          fontSize="10" 
-                          fill="#374151"
-                        >
-                          Precio:
-                        </text>
-                        <text 
-                          x={finalX + tooltipWidth - 12} 
-                          y={finalY + 84} 
-                          fontSize="10" 
-                          fill="#111827"
-                          fontWeight="600"
-                          textAnchor="end"
-                        >
-                          {formatFullValue(point.valor / point.cantidadAcumulada || 0)}
-                        </text>
-                        
-                        {/* Cantidad acumulada */}
-                        <text 
-                          x={finalX + 12} 
-                          y={finalY + 106} 
-                          fontSize="10" 
-                          fill="#374151"
-                        >
-                          Cantidad:
-                        </text>
-                        <text 
-                          x={finalX + tooltipWidth - 12} 
-                          y={finalY + 106} 
-                          fontSize="10" 
-                          fill="#111827"
-                          fontWeight="600"
-                          textAnchor="end"
-                        >
-                          {(point.cantidadAcumulada || 0).toFixed(2)}
-                        </text>
-                        
-                        {/* Rendimiento */}
-                        <text 
-                          x={finalX + 12} 
-                          y={finalY + 128} 
-                          fontSize="10" 
-                          fill="#374151"
-                        >
-                          Rendimiento:
-                        </text>
-                        <text 
-                          x={finalX + tooltipWidth - 12} 
-                          y={finalY + 128} 
-                          fontSize="10" 
-                          fill={point.rendimiento >= 0 ? '#10b981' : '#ef4444'}
-                          fontWeight="600"
-                          textAnchor="end"
-                        >
-                          {formatFullValue(point.rendimiento)}
-                        </text>
-                        
-                        {/* Rentabilidad */}
-                        <text 
-                          x={finalX + 12} 
-                          y={finalY + 150} 
-                          fontSize="10" 
-                          fill="#374151"
-                        >
-                          Rentabilidad:
-                        </text>
-                        <text 
-                          x={finalX + tooltipWidth - 12} 
-                          y={finalY + 150} 
-                          fontSize="10" 
-                          fill={point.rendimiento >= 0 ? '#10b981' : '#ef4444'}
-                          fontWeight="600"
-                          textAnchor="end"
-                        >
-                          {((point.rendimiento / point.importe) * 100).toFixed(2)}%
-                        </text>
-                      </g>
-                    )
-                  })()}
-                </>
-              )}
+              {/* Tooltip */}
+              {hoverPoint !== null && chartData[hoverPoint] && (() => {
+                const pt = chartData[hoverPoint]
+                const tx = getX(pt.fecha)
+                // Adjust tooltip position
+                const boxW = 200, boxH = pt.esDividendo ? 120 : (pt.esReinversion ? 120 : 160)
+                let bx = tx + 10
+                if (bx + boxW > width - margin.right) bx = tx - boxW - 10
+                const by = margin.top + 20
+
+                return (
+                  <g>
+                    <line x1={tx} y1={margin.top} x2={tx} y2={margin.top + chartHeight} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
+                    <circle cx={tx} cy={getY(pt.valor)} r={2.5} fill={pt.esDividendo ? "#a855f7" : (pt.esDesinversion ? "#f97316" : (pt.esReinversion ? "#0ea5e9" : "#3b82f6"))} stroke="white" strokeWidth={2} />
+
+                    <rect x={bx} y={by} width={boxW} height={boxH} fill="white" stroke="#e2e8f0" rx={6} filter="drop-shadow(0 4px 6px rgba(0,0,0,0.1))" />
+
+                    <text x={bx + 12} y={by + 20} fontSize="12" fontWeight="600" fill="#374151">{fmtDateLima(pt.fecha)}</text>
+
+                    {pt.esDividendo ? (
+                      <>
+                        <text x={bx + 12} y={by + 45} fontSize="11" fill="#a855f7" fontWeight="600">💰 Dividendo Recibido</text>
+                        <text x={bx + 12} y={by + 65} fontSize="18" fill="#1e293b" fontWeight="700">{formatFullValue(pt.montoOperacion)}</text>
+                      </>
+                    ) : pt.esReinversion ? (
+                      <>
+                        <text x={bx + 12} y={by + 45} fontSize="11" fill="#0ea5e9" fontWeight="600">🔄 Reinversión Auto</text>
+                        <text x={bx + 12} y={by + 65} fontSize="18" fill="#1e293b" fontWeight="700">{formatFullValue(pt.montoOperacion)}</text>
+                        <text x={bx + 12} y={by + 85} fontSize="10" fill="#64748b">(Capital Externo Neutro)</text>
+                      </>
+                    ) : (
+                      <>
+                        {/* Valor Tooltips */}
+                        <text x={bx + 12} y={by + 45} fontSize="11" fill="#64748b">Valor:</text>
+                        <text x={bx + boxW - 12} y={by + 45} fontSize="11" fill="#1e293b" fontWeight="600" textAnchor="end">{formatFullValue(pt.valor)}</text>
+
+                        <text x={bx + 12} y={by + 65} fontSize="11" fill="#64748b">Cap. Externo:</text>
+                        <text x={bx + boxW - 12} y={by + 65} fontSize="11" fill="#1e293b" fontWeight="600" textAnchor="end">{formatFullValue(pt.importe)}</text>
+
+                        <text x={bx + 12} y={by + 85} fontSize="11" fill="#64748b">Rendimiento:</text>
+                        <text x={bx + boxW - 12} y={by + 85} fontSize="11" fill={pt.rendimiento >= 0 ? "#10b981" : "#ef4444"} fontWeight="600" textAnchor="end">{formatFullValue(pt.rendimiento)}</text>
+
+                        {pt.montoOperacion > 0 && (
+                          <text x={bx + 12} y={by + 115} fontSize="10" fill={pt.esDesinversion ? "#f97316" : "#3b82f6"} fontWeight="500">
+                            {pt.esDesinversion ? "Retiro: " : "Aporte: "}{formatFullValue(pt.montoOperacion)}
+                          </text>
+                        )}
+                      </>
+                    )}
+                  </g>
+                )
+              })()}
             </svg>
-            
-            {/* Leyenda */}
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              gap: '20px', 
-              marginTop: '16px',
-              fontSize: '13px',
-              flexWrap: 'wrap'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ 
-                  width: '16px', 
-                  height: '3px', 
-                  backgroundColor: '#3b82f6',
-                  borderStyle: 'dashed'
-                }}></div>
-                <span>Inversión Acumulada</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ 
-                  width: '16px', 
-                  height: '3px', 
-                  backgroundColor: '#10b981'
-                }}></div>
-                <span>Valor Actual</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ 
-                  width: '8px', 
-                  height: '8px', 
-                  backgroundColor: '#3b82f6',
-                  borderRadius: '50%'
-                }}></div>
-                <span>Inversiones</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ 
-                  width: '6px', 
-                  height: '6px', 
-                  backgroundColor: '#6b7280',
-                  borderRadius: '50%'
-                }}></div>
-                <span>Precios Históricos</span>
-              </div>
+
+            {/* Legend */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '12px', fontSize: '12px', color: '#475569', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 12, height: 1, background: '#000000', borderTop: '1px dashed #000000' }}></div> Inversión Acumulada</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 12, height: 1, background: '#10b981' }}></div> Valor Actual</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 3, height: 3, borderRadius: '50%', background: '#3b82f6' }}></div> Aporte</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 3, height: 3, borderRadius: '50%', background: '#0ea5e9' }}></div> Reinversión</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 3, height: 3, borderRadius: '50%', background: '#f97316' }}></div> Retiro</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 3, height: 3, borderRadius: '50%', background: '#a855f7' }}></div> Dividendo</div>
             </div>
           </div>
         </div>
-        
-        {/* Resumen Financiero (columna derecha) */}
-        <div style={{ 
-          flex: 1, 
-          minWidth: '250px',
-          padding: '16px',
-          backgroundColor: '#f8fafc',
-          borderRadius: '8px',
-          border: '1px solid #e2e8f0'
-        }}>
-          <h4 style={{ 
-            margin: '0 0 16px 0', 
-            color: '#1e293b',
-            fontSize: '16px',
-            fontWeight: '600'
-          }}>
-            📊 Resumen Financiero
-          </h4>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <div style={{ 
-                fontSize: '13px', 
-                color: '#64748b', 
-                marginBottom: '4px',
-                fontWeight: '500'
-              }}>
-                Monto Total Invertido
-              </div>
-              <div style={{ 
-                fontSize: '18px', 
-                fontWeight: '600', 
-                color: '#1e293b'
-              }}>
-                {fmtCurr(chartData[chartData.length - 1]?.importe || 0, ticker?.moneda)}
+
+        {/* Resumen Financiero Panel (Right) */}
+        <div style={{ flex: 1, minWidth: '280px' }}>
+          <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
+            <h4 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '700', color: '#0f172a' }}>📊 Resumen Financiero</h4>
+
+            {/* 1. Capital Total Invertido */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '500', marginBottom: '4px' }}>Capital Total Invertido</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                {fmtCurr(posicionActual?.capitalInvertido || 0, ticker?.moneda)}
               </div>
             </div>
-            
-            <div>
-              <div style={{ 
-                fontSize: '13px', 
-                color: '#64748b', 
-                marginBottom: '4px',
-                fontWeight: '500'
-              }}>
-                Monto Actual
-              </div>
-              <div style={{ 
-                fontSize: '18px', 
-                fontWeight: '600', 
-                color: '#1e293b'
-              }}>
-                {fmtCurr(chartData[chartData.length - 1]?.valor || 0, ticker?.moneda)}
+
+            {/* 2. Monto Actual */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '500', marginBottom: '4px' }}>Monto Actual</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                {fmtCurr(posicionActual?.valorMercado || 0, ticker?.moneda)}
               </div>
             </div>
-            
-            <div>
-              <div style={{ 
-                fontSize: '13px', 
-                color: '#64748b', 
-                marginBottom: '4px',
-                fontWeight: '500'
-              }}>
-                Rendimiento
-              </div>
-              <div style={{ 
-                fontSize: '18px', 
-                fontWeight: '600',
-                color: (chartData[chartData.length - 1]?.rendimiento || 0) >= 0 ? '#10b981' : '#ef4444'
-              }}>
-                {fmtCurr(chartData[chartData.length - 1]?.rendimiento || 0, ticker?.moneda)}
-              </div>
-              <div style={{ 
-                fontSize: '12px', 
-                color: (chartData[chartData.length - 1]?.rendimiento || 0) >= 0 ? '#10b981' : '#ef4444',
-                marginTop: '2px'
-              }}>
-                ({((chartData[chartData.length - 1]?.rendimiento || 0) / (chartData[chartData.length - 1]?.importe || 1) * 100).toFixed(2)}%)
+
+            {/* 3. Ganancia Realizada (Cash) */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '500', marginBottom: '4px' }}>Ganancia Realizada (Cash)</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: (totalesHistorial?.gananciasRealizadas || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                {fmtCurr(totalesHistorial?.gananciasRealizadas || 0, ticker?.moneda)}
               </div>
             </div>
+
+            {/* 4. Ganancia No Realizada (Papel) */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '500', marginBottom: '4px' }}>Ganancia No Realizada (Papel)</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: (posicionActual?.gananciaNoRealizada || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                {fmtCurr(posicionActual?.gananciaNoRealizada || 0, ticker?.moneda)}
+              </div>
+            </div>
+
+            {/* 5. Retorno Total Combinado */}
+            {(() => {
+              const totalReturn = (Number(totalesHistorial?.gananciasRealizadas) || 0) + (Number(posicionActual?.gananciaNoRealizada) || 0)
+              const investedCapital = Number(posicionActual?.capitalInvertido) || 0
+              const totalRoi = investedCapital > 0 ? (totalReturn / investedCapital) * 100 : 0
+
+              return (
+                <div>
+                  <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '500', marginBottom: '4px' }}>Retorno Total Combinado</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: totalReturn >= 0 ? '#10b981' : '#ef4444' }}>
+                    {fmtCurr(totalReturn, ticker?.moneda)}
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: totalReturn >= 0 ? '#10b981' : '#ef4444' }}>
+                    ({totalReturn >= 0 ? '+' : ''}{totalRoi.toFixed(2)}%)
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       </div>

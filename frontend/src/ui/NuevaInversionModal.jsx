@@ -1,19 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { API } from './config'
 
-export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
+export default function NuevaInversionModal({ open, onClose, onSave, empresa }) {
   const [importe, setImporte] = useState('')
   const [cantidad, setCantidad] = useState('')
   const [fecha, setFecha] = useState('')
   const [plataforma, setPlataforma] = useState('Trii')
+  const [esReinversion, setEsReinversion] = useState(false)
   const [precioHistorico, setPrecioHistorico] = useState(null)
   const [buscandoPrecio, setBuscandoPrecio] = useState(false)
   const [cantidadAutoCalculada, setCantidadAutoCalculada] = useState(false)
 
-  useEffect(()=>{
-    if (open){
+  useEffect(() => {
+    if (open) {
       const hoy = new Date().toISOString().split('T')[0]
       setFecha(hoy); setImporte(''); setCantidad(''); setPlataforma('Trii')
+      setEsReinversion(false)
       setPrecioHistorico(null)
       setCantidadAutoCalculada(false)
     }
@@ -84,7 +86,7 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
     buscarPrecio()
   }, [fecha, importe, empresa?.id, open, cantidadAutoCalculada])
 
-  const apertura = useMemo(()=>{
+  const apertura = useMemo(() => {
     const imp = Number(importe); const cant = Number(cantidad)
     if (!imp || !cant) return null
     if (cant === 0) return null
@@ -92,9 +94,15 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
     return Number.isFinite(v) ? v : null
   }, [importe, cantidad])
 
-  function save(){
+  function save() {
     if (!importe || !cantidad || !fecha) return
-    onSave({ fecha, importe: Number(importe), cantidad: Number(cantidad), plataforma })
+    onSave({
+      fecha,
+      importe: Number(importe),
+      cantidad: Number(cantidad),
+      plataforma,
+      origen_capital: esReinversion ? 'REINVERSION' : 'FRESH_CASH'
+    })
   }
 
   if (!open) return null
@@ -110,16 +118,16 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
             <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em' }}>
               Nueva Inversión
             </h3>
-            <p style={{ 
-              margin: '4px 0 0 0', 
-              fontSize: '14px', 
+            <p style={{
+              margin: '4px 0 0 0',
+              fontSize: '14px',
               color: 'var(--fg-secondary)',
               fontWeight: 500
             }}>
               {empresa?.ticker} • {empresa?.nombre}
             </p>
           </div>
-          <button 
+          <button
             onClick={onClose}
             style={{
               background: 'none',
@@ -150,9 +158,9 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
             {/* Fecha */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Fecha de inversión</label>
-              <input 
-                value={fecha} 
-                onChange={e=>setFecha(e.target.value)} 
+              <input
+                value={fecha}
+                onChange={e => setFecha(e.target.value)}
                 type="date"
                 autoFocus
               />
@@ -162,11 +170,11 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Importe ({empresa?.moneda || 'USD'})</label>
-                <input 
-                  value={importe} 
-                  onChange={e=>setImporte(e.target.value)} 
-                  type="number" 
-                  min="0" 
+                <input
+                  value={importe}
+                  onChange={e => setImporte(e.target.value)}
+                  type="number"
+                  min="0"
                   step="0.01"
                   placeholder="0.00"
                 />
@@ -175,9 +183,9 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
                 <label>
                   Cantidad
                   {precioHistorico && (
-                    <span style={{ 
-                      fontSize: '11px', 
-                      color: 'var(--fg-secondary)', 
+                    <span style={{
+                      fontSize: '11px',
+                      color: 'var(--fg-secondary)',
                       fontWeight: 'normal',
                       marginLeft: '6px'
                     }}>
@@ -185,14 +193,14 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
                     </span>
                   )}
                 </label>
-                <input 
-                  value={cantidad} 
-                  onChange={e=>{
+                <input
+                  value={cantidad}
+                  onChange={e => {
                     setCantidad(e.target.value)
                     setCantidadAutoCalculada(false)
-                  }} 
-                  type="number" 
-                  min="0" 
+                  }}
+                  type="number"
+                  min="0"
                   step="0.0001"
                   placeholder="0.00"
                   disabled={buscandoPrecio}
@@ -201,19 +209,19 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
                   }}
                 />
                 {buscandoPrecio && (
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: 'var(--fg-secondary)', 
-                    marginTop: '4px' 
+                  <div style={{
+                    fontSize: '11px',
+                    color: 'var(--fg-secondary)',
+                    marginTop: '4px'
                   }}>
                     Buscando precio histórico...
                   </div>
                 )}
                 {precioHistorico && !buscandoPrecio && (
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: 'var(--fg-secondary)', 
-                    marginTop: '4px' 
+                  <div style={{
+                    fontSize: '11px',
+                    color: 'var(--fg-secondary)',
+                    marginTop: '4px'
                   }}>
                     Precio: {new Intl.NumberFormat('es-PE', {
                       style: 'currency',
@@ -232,16 +240,16 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
                 borderRadius: 'var(--radius)',
                 border: '1px solid var(--border-light)'
               }}>
-                <div style={{ 
-                  fontSize: '13px', 
+                <div style={{
+                  fontSize: '13px',
                   color: 'var(--fg-secondary)',
                   marginBottom: '2px',
                   fontWeight: 600
                 }}>
                   Precio de apertura
                 </div>
-                <div style={{ 
-                  fontSize: '20px', 
+                <div style={{
+                  fontSize: '20px',
                   fontWeight: 600,
                   color: 'var(--fg)',
                   fontVariantNumeric: 'tabular-nums'
@@ -257,7 +265,7 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
             {/* Plataforma */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Plataforma</label>
-              <select value={plataforma} onChange={e=>setPlataforma(e.target.value)}>
+              <select value={plataforma} onChange={e => setPlataforma(e.target.value)}>
                 <option value="Trii">Trii</option>
                 <option value="Tyba">Tyba</option>
                 <option value="Etoro">Etoro</option>
@@ -265,12 +273,44 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
                 <option value="BBVA">BBVA</option>
               </select>
             </div>
+
+            {/* Checkbox de Reinversión */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={esReinversion}
+                  onChange={(e) => setEsReinversion(e.target.checked)}
+                  style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                />
+                Esta inversión proviene de una desinversión reciente (capital reinvertido)
+              </label>
+              {esReinversion && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '8px 12px',
+                  background: '#fef3c7',
+                  border: '1px solid #fbbf24',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  color: '#92400e'
+                }}>
+                  💡 Esta inversión NO se contará como nuevo capital aportado en las métricas del dashboard.
+                </div>
+              )}            </div>
           </div>
         </div>
 
         {/* Footer */}
         <div className="modal-footer">
-          <button 
+          <button
             onClick={onClose}
             style={{
               padding: '10px 20px',
@@ -280,9 +320,9 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }){
           >
             Cancelar
           </button>
-          <button 
-            onClick={save} 
-            disabled={!canSave} 
+          <button
+            onClick={save}
+            disabled={!canSave}
             className="btn-primary"
             style={{
               padding: '10px 20px',

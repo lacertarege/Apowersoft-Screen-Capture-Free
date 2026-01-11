@@ -5,7 +5,9 @@ export function PortfolioSummary({ investments, currency }) {
   const stats = React.useMemo(() => {
     const invertido = investments.reduce((a, x) => a + (Number(x.importe_total) || 0), 0)
     const valorActual = investments.reduce((a, x) => a + (Number(x.balance) || 0), 0)
-    const rendimiento = investments.reduce((a, x) => a + (Number(x.rendimiento) || 0), 0)
+    const capitalGain = investments.reduce((a, x) => a + (Number(x.rendimiento) || 0), 0)
+    const dividends = investments.reduce((a, x) => a + (Number(x.total_dividends || 0)), 0)
+    const rendimiento = capitalGain + dividends
     const rentab = invertido ? (rendimiento / invertido) : 0
 
     return { invertido, valorActual, rendimiento, rentab }
@@ -24,7 +26,7 @@ export function PortfolioSummary({ investments, currency }) {
           Rendimiento: <NumberCell value={stats.rendimiento} currency={currency} />
         </div>
         <div>
-          Rentabilidad: 
+          Rentabilidad:
           <span className={stats.rentab >= 0 ? 'text-green' : 'text-red'}>
             {new Intl.NumberFormat('es-PE', {
               style: 'percent',
