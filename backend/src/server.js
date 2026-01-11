@@ -62,7 +62,9 @@ async function startServer() {
     buildRoutes(app, db)
     logger.info('Rutas configuradas')
 
-    // Verificación al iniciar: identificar fechas faltantes desde 2023-05-16 y en los últimos 7 días
+    // DESHABILITADO: Backfill automático al iniciar (causaba muchas consultas a Decolecta)
+    // La sincronización ahora se hace solo manualmente desde el botón en la UI
+    /*
     try {
       const hoyLima = getLimaDate()
       const missingRecent = db.prepare(`WITH RECURSIVE dates(d) AS (
@@ -80,6 +82,7 @@ async function startServer() {
     } catch (e) {
       console.error('Error verificando tipos_cambio al iniciar', e)
     }
+    */
 
     // Iniciar jobs programados
     startJobs(db)

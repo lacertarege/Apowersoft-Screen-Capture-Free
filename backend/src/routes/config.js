@@ -1,21 +1,21 @@
 import express from 'express'
 
-export function configRouter(db){
+export function configRouter(db) {
   const r = express.Router()
 
-  r.get('/tipos-inversion', (req,res)=>{
+  r.get('/tipos-inversion', (req, res) => {
     const rows = db.prepare('SELECT * FROM tipos_inversion').all()
     res.json({ items: rows })
   })
-  r.post('/tipos-inversion', (req,res)=>{
+  r.post('/tipos-inversion', (req, res) => {
     const { nombre, activo = true } = req.body
-    if (!nombre) return res.status(400).json({error:'nombre requerido'})
-    const info = db.prepare('INSERT INTO tipos_inversion (nombre, activo) VALUES (?,?)').run(nombre, activo?1:0)
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' })
+    const info = db.prepare('INSERT INTO tipos_inversion (nombre, activo) VALUES (?,?)').run(nombre, activo ? 1 : 0)
     res.status(201).json({ id: info.lastInsertRowid })
   })
 
   // Listado de tipos de cambio con filtros opcionales
-  r.get('/tipo-cambio', (req,res)=>{
+  r.get('/tipo-cambio', (req, res) => {
     try {
       const { fecha, from, to, limit, verify } = req.query
 
@@ -25,7 +25,7 @@ export function configRouter(db){
 
       // Disparar verificación de días recientes (no bloqueante) si verify=1
       if (verify === '1') {
-        ;(async ()=>{
+        ; (async () => {
           try {
             const { backfillFxJob } = await import('../jobs/backfillFx.js')
             await backfillFxJob(db, false)
@@ -41,15 +41,15 @@ export function configRouter(db){
       if (to) { where.push('fecha <= ?'); params.push(to) }
       if (where.length) sql += ' WHERE ' + where.join(' AND ')
       sql += ' ORDER BY fecha DESC'
-      const lim = Number(limit)||365
+      const lim = Number(limit) || 365
       sql += ' LIMIT ' + lim
-      
+
       console.log(`[DEBUG] SQL: ${sql}`)
       console.log(`[DEBUG] Parámetros:`, params)
-      
+
       const rows = db.prepare(sql).all(...params)
       console.log(`[DEBUG] Registros devueltos: ${rows.length}`)
-      
+
       res.json({ items: rows })
     } catch (e) {
       console.error('GET /config/tipo-cambio error', e)
@@ -58,16 +58,16 @@ export function configRouter(db){
   })
 
   // Importación masiva de tipos de cambio desde CSV (debe ir antes de /tipo-cambio)
-  r.post('/tipo-cambio/bulk', (req,res)=>{
+  r.post('/tipo-cambio/bulk', (req, res) => {
     try {
-      const { items, fuente_api='csv' } = req.body
+      const { items, fuente_api = 'csv' } = req.body
       if (!Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({error:'items debe ser un array no vacío'})
+        return res.status(400).json({ error: 'items debe ser un array no vacío' })
       }
 
       const stmt = db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
         ON CONFLICT(fecha) DO UPDATE SET usd_pen=excluded.usd_pen, fuente_api=excluded.fuente_api`)
-      
+
       let inserted = 0
       let updated = 0
       let errors = []
@@ -78,13 +78,13 @@ export function configRouter(db){
           errors.push({ item, error: `Fecha o precio faltante. Fecha: "${fecha || 'vacía'}", Precio: "${usd_pen || 'vacío'}"` })
           continue
         }
-        
+
         // Validar formato de fecha YYYY-MM-DD
         if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
           errors.push({ item, error: `Formato de fecha inválido: "${fecha}". Debe ser YYYY-MM-DD` })
           continue
         }
-        
+
         const usdPenNum = Number(usd_pen)
         if (!isFinite(usdPenNum) || usdPenNum <= 0) {
           errors.push({ item, error: `Precio inválido: "${usd_pen}". Debe ser un número positivo` })
@@ -104,10 +104,10 @@ export function configRouter(db){
         }
       }
 
-      res.json({ 
-        ok: true, 
-        inserted, 
-        updated, 
+      res.json({
+        ok: true,
+        inserted,
+        updated,
         total: items.length,
         errors: errors.length > 0 ? errors : undefined
       })
@@ -118,29 +118,29 @@ export function configRouter(db){
   })
 
   // Upsert de tipo de cambio (manual o desde API)
-  r.post('/tipo-cambio', (req,res)=>{
-    const { fecha, usd_pen, fuente_api='manual' } = req.body
-    if (!fecha || usd_pen==null) return res.status(400).json({error:'fecha y usd_pen requeridos'})
+  r.post('/tipo-cambio', (req, res) => {
+    const { fecha, usd_pen, fuente_api = 'manual' } = req.body
+    if (!fecha || usd_pen == null) return res.status(400).json({ error: 'fecha y usd_pen requeridos' })
     db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
       ON CONFLICT(fecha) DO UPDATE SET usd_pen=excluded.usd_pen, fuente_api=excluded.fuente_api`).run(fecha, usd_pen, fuente_api)
     res.json({ ok: true })
   })
 
   // Actualizar tipo de cambio por fecha
-  r.patch('/tipo-cambio/:fecha', (req,res)=>{
+  r.patch('/tipo-cambio/:fecha', (req, res) => {
     try {
       const { fecha } = req.params
       const { usd_pen, fuente_api } = req.body
-      
-      if (usd_pen == null) return res.status(400).json({error:'usd_pen requerido'})
-      
+
+      if (usd_pen == null) return res.status(400).json({ error: 'usd_pen requerido' })
+
       const result = db.prepare(`UPDATE tipos_cambio SET usd_pen = ?, fuente_api = ? WHERE fecha = ?`)
         .run(usd_pen, fuente_api || 'manual', fecha)
-      
+
       if (result.changes === 0) {
-        return res.status(404).json({error:'Tipo de cambio no encontrado'})
+        return res.status(404).json({ error: 'Tipo de cambio no encontrado' })
       }
-      
+
       res.json({ ok: true })
     } catch (e) {
       console.error('PATCH /config/tipo-cambio/:fecha error', e)
@@ -149,16 +149,16 @@ export function configRouter(db){
   })
 
   // Eliminar tipo de cambio por fecha
-  r.delete('/tipo-cambio/:fecha', (req,res)=>{
+  r.delete('/tipo-cambio/:fecha', (req, res) => {
     try {
       const { fecha } = req.params
-      
+
       const result = db.prepare('DELETE FROM tipos_cambio WHERE fecha = ?').run(fecha)
-      
+
       if (result.changes === 0) {
-        return res.status(404).json({error:'Tipo de cambio no encontrado'})
+        return res.status(404).json({ error: 'Tipo de cambio no encontrado' })
       }
-      
+
       res.json({ ok: true, deleted: result.changes })
     } catch (e) {
       console.error('DELETE /config/tipo-cambio/:fecha error', e)
@@ -167,13 +167,13 @@ export function configRouter(db){
   })
 
   // Disparar backfill (full o reciente)
-  r.post('/tipo-cambio/backfill', async (req,res)=>{
+  r.post('/tipo-cambio/backfill', async (req, res) => {
     try {
-      const mode = (req.body?.mode||'recent')
+      const mode = (req.body?.mode || 'recent')
       const fullMode = mode === 'full'
       const { backfillFxJob } = await import('../jobs/backfillFx.js')
-      // Ejecutar en segundo plano para no bloquear la petición
-      ;(async ()=>{ try { await backfillFxJob(db, fullMode) } catch(e){ console.error('backfill API error', e) } })()
+        // Ejecutar en segundo plano para no bloquear la petición
+        ; (async () => { try { await backfillFxJob(db, fullMode) } catch (e) { console.error('backfill API error', e) } })()
       res.json({ started: true, mode })
     } catch (e) {
       console.error('POST /config/tipo-cambio/backfill error', e)
@@ -181,14 +181,114 @@ export function configRouter(db){
     }
   })
 
+  // Sincronizar tipos de cambio desde la API de Decolecta (datos oficiales de SUNAT)
+// Sincronizar tipos de cambio desde la API de Decolecta (datos oficiales de SUNAT)
+r.post('/tipo-cambio/sync-sunat', async (req, res) => {
+    try {
+        console.log('[DECOLECTA] Iniciando sincronización...')
+
+        // Importar funciones
+        const { fetchSunatExchangeRates } = await import('../sources/sunat.js')
+        const { getLimaDate } = await import('../utils/date.js')
+
+        // Token
+        const apiToken = process.env.DECOLECTA_API_TOKEN || 'sk_12751.oph635WotcsmGvQNMQgwOlx1Yi7rHSwy'
+
+        // Identificar fechas faltantes (últimos 30 días) - misma lógica que backfillFx.js
+        const hoyLima = getLimaDate()
+        const dates = db.prepare(`WITH RECURSIVE dates(d) AS (
+        SELECT DATE(?,'-30 day')
+        UNION ALL
+        SELECT DATE(d,'+1 day') FROM dates WHERE d < DATE(?)
+      ) SELECT d FROM dates WHERE d NOT IN (SELECT fecha FROM tipos_cambio)`).all(hoyLima, hoyLima).map(r => r.d)
+
+        if (dates.length === 0) {
+            console.log('[DECOLECTA] No hay fechas faltantes')
+            return res.json({ ok: true, inserted: 0, updated: 0, total: 0, message: 'No hay fechas faltantes' })
+        }
+
+        console.log(`[DECOLECTA] ${dates.length} fechas faltantes detectadas`)
+
+        // Agrupar por mes/año para consultas eficientes
+        const monthsToFetch = new Set()
+        dates.forEach(dateStr => {
+            const [year, month] = dateStr.split('-')
+            monthsToFetch.add(`${year}-${month}`)
+        })
+
+        console.log(`[DECOLECTA] Consultando ${monthsToFetch.size} mes(es) a la API`)
+
+        // Obtener datos de todos los meses necesarios
+        let items = []
+        for (const yearMonth of monthsToFetch) {
+            const [year, month] = yearMonth.split('-')
+
+            try {
+                const monthItems = await fetchSunatExchangeRates(apiToken, null, parseInt(month), parseInt(year))
+                items = items.concat(monthItems)
+                console.log(`[DECOLECTA] ✓ ${monthItems.length} registros obtenidos para ${yearMonth}`)
+            } catch (error) {
+                console.error(`[DECOLECTA] ✗ Error consultando ${yearMonth}:`, error.message)
+            }
+        }
+
+        if (items.length === 0) {
+            return res.status(404).json({ error: 'No se obtuvieron datos de la API' })
+        }
+
+        // Filtrar solo fechas que realmente faltan en nuestra BD
+        const datesSet = new Set(dates)
+        items = items.filter(item => datesSet.has(item.fecha))
+
+        console.log(`[DECOLECTA] ${items.length} registros para insertar (solo fechas faltantes)`)
+
+        // Insertar en la BD
+        const stmt = db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
+        ON CONFLICT(fecha) DO UPDATE SET usd_pen=excluded.usd_pen, fuente_api=excluded.fuente_api`)
+
+        let inserted = 0
+        let updated = 0
+        let errors = []
+
+        for (const item of items) {
+            const { fecha, usd_pen } = item
+            try {
+                const existing = db.prepare('SELECT fecha FROM tipos_cambio WHERE fecha = ?').get(fecha)
+                stmt.run(fecha, usd_pen, 'sunat')
+                if (existing) {
+                    updated++
+                } else {
+                    inserted++
+                }
+            } catch (e) {
+                errors.push({ fecha, error: e.message })
+            }
+        }
+
+        console.log(`[DECOLECTA] Sincronización completada: ${inserted} insertados, ${updated} actualizados`)
+
+        res.json({
+            ok: true,
+            inserted,
+            updated,
+            total: items.length,
+            errors: errors.length > 0 ? errors : undefined
+        })
+    } catch (e) {
+        console.error('POST /config/tipo-cambio/sync-sunat error', e)
+        res.status(500).json({ error: e.message || 'Error sincronizando con SUNAT' })
+    }
+})
+
+
   // Presupuesto: leer o establecer (id fijo = 1)
-  r.get('/presupuesto', (req,res)=>{
+  r.get('/presupuesto', (req, res) => {
     const row = db.prepare('SELECT id, nombre, version, created_at FROM presupuesto WHERE id=1').get()
     res.json({ item: row || null })
   })
-  r.post('/presupuesto', (req,res)=>{
+  r.post('/presupuesto', (req, res) => {
     const { nombre, version } = req.body
-    if (!nombre || !version) return res.status(400).json({error:'nombre y version requeridos'})
+    if (!nombre || !version) return res.status(400).json({ error: 'nombre y version requeridos' })
     db.prepare(`INSERT INTO presupuesto (id, nombre, version, created_at) VALUES (1, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET nombre=excluded.nombre, version=excluded.version`).run(nombre, version, new Date().toISOString())
     res.json({ ok: true })

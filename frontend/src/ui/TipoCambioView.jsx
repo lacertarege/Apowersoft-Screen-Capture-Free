@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { API } from './config'
 import { fmtDateLima } from './utils'
 
-export default function TipoCambioView(){
+export default function TipoCambioView() {
   const [items, setItems] = useState([])
   const [limit, setLimit] = useState(60)
   const [loading, setLoading] = useState(false)
   const [fecha, setFecha] = useState('')
   const [usdPen, setUsdPen] = useState('')
   const [saving, setSaving] = useState(false)
-  
+
   // Estados para edición
   const [editModal, setEditModal] = useState({
     open: false,
@@ -32,43 +32,53 @@ export default function TipoCambioView(){
     processing: false
   })
 
-  const load = async ()=>{
+  // Estado para sincronización SUNAT
+  const [syncingSunat, setSyncingSunat] = useState(false)
+
+  // Estado para pegado manual de JSON SUNAT
+  const [jsonModal, setJsonModal] = useState({
+    open: false,
+    jsonText: '',
+    processing: false
+  })
+
+  const load = async () => {
     setLoading(true)
-    try{
+    try {
       const r = await fetch(`${API}/config/tipo-cambio?limit=${limit}`)
-      const d = await r.json().catch(()=>({}))
-      setItems(d.items||[])
-    }catch{
+      const d = await r.json().catch(() => ({}))
+      setItems(d.items || [])
+    } catch {
       setItems([])
-    }finally{
+    } finally {
       setLoading(false)
     }
   }
 
-  useEffect(()=>{ load() }, [limit])
+  useEffect(() => { load() }, [limit])
 
   const latest = items[0] || null
 
-  const fmtRate = (v)=>{
+  const fmtRate = (v) => {
     const n = Number(v)
     if (!isFinite(n)) return '-'
     return n.toFixed(3)
   }
 
-  const addManual = async ()=>{
-    const f = (fecha||'').trim()
+  const addManual = async () => {
+    const f = (fecha || '').trim()
     const v = Number(usdPen)
-    if (!f || !isFinite(v) || v <= 0){ alert('Ingrese fecha y un valor válido (> 0)'); return }
+    if (!f || !isFinite(v) || v <= 0) { alert('Ingrese fecha y un valor válido (> 0)'); return }
     setSaving(true)
-    try{
-      const r = await fetch(`${API}/config/tipo-cambio`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fecha: f, usd_pen: v, fuente_api:'manual' }) })
-      const d = await r.json().catch(()=>({}))
-      if (!r.ok || d.error){ throw new Error(d.error || 'No se pudo guardar') }
+    try {
+      const r = await fetch(`${API}/config/tipo-cambio`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fecha: f, usd_pen: v, fuente_api: 'manual' }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok || d.error) { throw new Error(d.error || 'No se pudo guardar') }
       setFecha(''); setUsdPen('')
       await load()
       alert('Tipo de cambio guardado')
-    }catch(e){ alert(e.message) }
-    finally{ setSaving(false) }
+    } catch (e) { alert(e.message) }
+    finally { setSaving(false) }
   }
 
 
@@ -85,7 +95,7 @@ export default function TipoCambioView(){
   // Función para guardar cambios
   const handleSaveEdit = async () => {
     if (!editModal.fecha || !editModal.usdPen) return
-    
+
     try {
       const response = await fetch(`${API}/config/tipo-cambio/${editModal.fecha}`, {
         method: 'PATCH',
@@ -95,7 +105,7 @@ export default function TipoCambioView(){
           fuente_api: editModal.fuente
         })
       })
-      
+
       if (response.ok) {
         setEditModal({ open: false, fecha: '', usdPen: '', fuente: 'manual' })
         await load()
@@ -113,14 +123,14 @@ export default function TipoCambioView(){
   // Función para eliminar
   const handleDelete = async (fecha) => {
     if (!confirm(`¿Estás seguro de eliminar el tipo de cambio del ${fmtDateLima(fecha)}?`)) return
-    
+
     setDeleting(fecha)
-    
+
     try {
       const response = await fetch(`${API}/config/tipo-cambio/${fecha}`, {
         method: 'DELETE'
       })
-      
+
       if (response.ok) {
         await load()
         alert('Tipo de cambio eliminado exitosamente')
@@ -133,6 +143,135 @@ export default function TipoCambioView(){
       alert('Error al eliminar el tipo de cambio')
     } finally {
       setDeleting(null)
+    }
+  }
+
+  // Función para sincronizar desde SUNAT
+  const handleSyncSunat = async () => {
+    if (!confirm('¿Deseas sincronizar los tipos de cambio desde la API oficial de SUNAT?')) return
+
+    setSyncingSunat(true)
+
+    try {
+      const response = await fetch(`${API}/config/tipo-cambio/sync-sunat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.error || `Error HTTP ${response.status}`)
+      }
+
+      // Mostrar resultados
+      let mensaje = '✅ Sincronización SUNAT exitosa:\n\n'
+      mensaje += `📊 Total procesados: ${data.total}\n`
+      mensaje += `➕ Nuevos registros: ${data.inserted}\n`
+      mensaje += `🔄 Actualizados: ${data.updated}`
+
+      if (data.errors && data.errors.length > 0) {
+        mensaje += `\n\n⚠️ Errores (${data.errors.length}):\n`
+        data.errors.slice(0, 3).forEach((err, idx) => {
+          mensaje += `${idx + 1}. ${err.error || 'Error desconocido'}\n`
+        })
+        if (data.errors.length > 3) {
+          mensaje += `... y ${data.errors.length - 3} más`
+        }
+      }
+
+      alert(mensaje)
+      await load()
+
+    } catch (error) {
+      console.error('Error syncing with SUNAT:', error)
+
+      // Si falla, sugerir uso de JSON manual
+      const usarManual = confirm(
+        `❌ La API de SUNAT requiere autenticación desde navegador.\n\n` +
+        `¿Deseas pegar datos JSON manualmente?\n\n` +
+        `Puedes copiar el JSON desde:\n` +
+        `https://e-consulta.sunat.gob.pe/cl-at-ittipcam/tcS01Alias`
+      )
+
+      if (usarManual) {
+        setJsonModal({ open: true, jsonText: '', processing: false })
+      }
+    } finally {
+      setSyncingSunat(false)
+    }
+  }
+
+  // Función para procesar JSON pegado manualmente
+  const handleProcessJson = async () => {
+    if (!jsonModal.jsonText.trim()) {
+      alert('Por favor, pega el JSON de SUNAT')
+      return
+    }
+
+    setJsonModal({ ...jsonModal, processing: true })
+
+    try {
+      // Parsear JSON
+      const data = JSON.parse(jsonModal.jsonText)
+
+      if (!Array.isArray(data)) {
+        throw new Error('El JSON debe ser un array')
+      }
+
+      // Convertir formato SUNAT a formato del backend
+      const items = []
+      for (const item of data) {
+        if (item.codTipo !== 'V') continue // Solo tipo venta
+
+        const { fecPublica, valTipo } = item
+        if (!fecPublica || !valTipo) continue
+
+        // Convertir DD/MM/YYYY a YYYY-MM-DD
+        const [day, month, year] = fecPublica.split('/')
+        const fecha = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+        const usd_pen = parseFloat(valTipo)
+
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || isNaN(usd_pen)) continue
+
+        items.push({ fecha, usd_pen })
+      }
+
+      if (items.length === 0) {
+        alert('No se encontraron datos válidos en el JSON')
+        setJsonModal({ ...jsonModal, processing: false })
+        return
+      }
+
+      // Enviar al backend
+      const response = await fetch(`${API}/config/tipo-cambio/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items, fuente_api: 'sunat-manual' })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al guardar')
+      }
+
+      // Mostrar resultados
+      let mensaje = '✅ Importación JSON exitosa:\n\n'
+      mensaje += `📊 Total procesados: ${result.total}\n`
+      mensaje += `➕ Nuevos registros: ${result.inserted}\n`
+      mensaje += `🔄 Actualizados: ${result.updated}`
+
+      alert(mensaje)
+
+      // Cerrar modal y recargar
+      setJsonModal({ open: false, jsonText: '', processing: false })
+      await load()
+
+    } catch (error) {
+      console.error('Error processing JSON:', error)
+      alert(`❌ Error: ${error.message}\n\nVerifica que el JSON tenga el formato correcto de SUNAT.`)
+      setJsonModal({ ...jsonModal, processing: false })
     }
   }
 
@@ -179,11 +318,11 @@ export default function TipoCambioView(){
   const parseCSV = (text) => {
     const lines = text.split(/\r?\n/).filter(line => line.trim())
     if (lines.length === 0) return { columns: [], rows: [] }
-    
+
     // Detectar delimitador (coma o punto y coma)
     // Si hay punto y coma, usarlo; de lo contrario, usar coma
     const delimiter = text.includes(';') ? ';' : ','
-    
+
     // Parsear primera línea como encabezados
     const headers = parseCSVLine(lines[0], delimiter).map(h => {
       // Remover comillas externas si existen
@@ -194,7 +333,7 @@ export default function TipoCambioView(){
       // Reemplazar comillas escapadas
       return h.replace(/""/g, '"')
     })
-    
+
     // Parsear resto de líneas
     const rows = []
     for (let i = 1; i < lines.length; i++) {
@@ -207,7 +346,7 @@ export default function TipoCambioView(){
         // Reemplazar comillas escapadas
         return v.replace(/""/g, '"')
       })
-      
+
       if (values.length > 0 && values.some(v => v)) {
         const row = {}
         headers.forEach((header, idx) => {
@@ -216,7 +355,7 @@ export default function TipoCambioView(){
         rows.push(row)
       }
     }
-    
+
     return { columns: headers, rows }
   }
 
@@ -235,7 +374,7 @@ export default function TipoCambioView(){
       try {
         const text = event.target.result
         const { columns, rows } = parseCSV(text)
-        
+
         if (columns.length === 0) {
           alert('El archivo CSV no tiene columnas válidas')
           return
@@ -275,18 +414,18 @@ export default function TipoCambioView(){
         try {
           const text = event.target.result
           const { rows } = parseCSV(text)
-          
+
           // Convertir a formato esperado por el backend
           const items = []
           for (const row of rows) {
             const fechaRaw = row[csvModal.mapping.fecha]
             const precioRaw = row[csvModal.mapping.precio]
-            
+
             if (!fechaRaw || !precioRaw) continue
 
             // Normalizar fecha (aceptar varios formatos)
             let fecha = fechaRaw.trim()
-            
+
             // Si ya está en formato YYYY-MM-DD, usarla directamente
             if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
               // Ya está en el formato correcto
@@ -346,7 +485,7 @@ export default function TipoCambioView(){
               // Solo tiene coma, asumir que es separador decimal
               precioStr = precioStr.replace(',', '.')
             }
-            
+
             const precio = parseFloat(precioStr)
             if (isNaN(precio) || precio <= 0) {
               console.warn(`Precio inválido: ${precioRaw} -> ${precioStr}`)
@@ -391,7 +530,7 @@ export default function TipoCambioView(){
           mensaje += `📊 Total procesados: ${data.total}\n`
           mensaje += `➕ Nuevos registros: ${data.inserted}\n`
           mensaje += `🔄 Actualizados: ${data.updated}`
-          
+
           if (data.errors && data.errors.length > 0) {
             mensaje += `\n\n⚠️ Errores (${data.errors.length}):\n`
             data.errors.slice(0, 5).forEach((err, idx) => {
@@ -401,9 +540,9 @@ export default function TipoCambioView(){
               mensaje += `... y ${data.errors.length - 5} más`
             }
           }
-          
+
           alert(mensaje)
-          
+
           // Cerrar modal y recargar datos
           setCsvModal({
             open: false,
@@ -416,10 +555,10 @@ export default function TipoCambioView(){
           await load()
         } catch (error) {
           console.error('Error importing CSV:', error)
-          
+
           // Mensaje de error más detallado
           let errorMsg = 'Error al importar datos'
-          
+
           if (error.message) {
             errorMsg = error.message
           } else if (error instanceof TypeError && error.message.includes('fetch')) {
@@ -427,7 +566,7 @@ export default function TipoCambioView(){
           } else {
             errorMsg = `Error: ${error.toString()}`
           }
-          
+
           alert(`❌ ${errorMsg}\n\nPor favor, verifica:\n- El formato de las fechas\n- Los valores numéricos\n- La conexión con el servidor`)
           setCsvModal({ ...csvModal, processing: false })
         }
@@ -444,43 +583,80 @@ export default function TipoCambioView(){
     <div className="container">
       <h2>Tipo de Cambio</h2>
 
-      <div className="card" style={{marginBottom:12}}>
-        <h3 className="card-title" style={{margin:0}}>Recientes</h3>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <h3 className="card-title" style={{ margin: 0 }}>Recientes</h3>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={handleSyncSunat}
+              disabled={syncingSunat}
+              className="btn-primary"
+              style={{
+                padding: '6px 12px',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: syncingSunat ? 'not-allowed' : 'pointer',
+                opacity: syncingSunat ? 0.7 : 1
+              }}
+              title="Sincronizar tipos de cambio desde la API oficial de SUNAT"
+            >
+              {syncingSunat ? '⏳' : '🔄'} {syncingSunat ? 'Sincronizando...' : 'Actualizar desde SUNAT'}
+            </button>
+            <button
+              onClick={() => setJsonModal({ open: true, jsonText: '', processing: false })}
+              className="btn"
+              style={{
+                padding: '6px 12px',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: '#f3f4f6',
+                border: '1px solid #d1d5db'
+              }}
+              title="Pegar JSON de SUNAT manualmente"
+            >
+              📋 Pegar JSON
+            </button>
+          </div>
+        </div>
         {latest ? (
-          <div className="text-muted" style={{marginTop:4}}>
+          <div className="text-muted" style={{ marginTop: 4 }}>
             Último: 1 USD = {fmtRate(latest.usd_pen)} PEN · {fmtDateLima(latest.fecha)}
           </div>
         ) : (
-          <div className="text-muted" style={{marginTop:4}}>Sin datos</div>
+          <div className="text-muted" style={{ marginTop: 4 }}>Sin datos</div>
         )}
 
-        <table style={{marginTop:12, margin:0}}>
+        <table style={{ marginTop: 12, margin: 0 }}>
           <thead>
             <tr>
               <th>Fecha</th>
               <th>USD → PEN</th>
               <th>Fuente</th>
-              <th style={{textAlign:'center', width:'120px'}}>Acciones</th>
+              <th style={{ textAlign: 'center', width: '120px' }}>Acciones</th>
             </tr>
           </thead>
         </table>
-        
-        <div style={{maxHeight:'calc(60vh - 40px)', overflow:'auto', marginTop:'-1px'}}>
-          <table style={{margin:0}}>
+
+        <div style={{ maxHeight: 'calc(60vh - 40px)', overflow: 'auto', marginTop: '-1px' }}>
+          <table style={{ margin: 0 }}>
             <colgroup>
               <col />
               <col />
               <col />
-              <col style={{width:'120px'}} />
+              <col style={{ width: '120px' }} />
             </colgroup>
             <tbody>
-              {items.map((it)=> (
+              {items.map((it) => (
                 <tr key={it.fecha}>
                   <td>{fmtDateLima(it.fecha)}</td>
-                  <td style={{textAlign:'right'}}>{fmtRate(it.usd_pen)}</td>
+                  <td style={{ textAlign: 'right' }}>{fmtRate(it.usd_pen)}</td>
                   <td>{it.fuente_api || '-'}</td>
-                  <td style={{textAlign:'center'}}>
-                    <div style={{display:'flex', gap:'4px', justifyContent:'center'}}>
+                  <td style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                       <button
                         onClick={() => handleEdit(it)}
                         className="btn btn-sm"
@@ -521,9 +697,9 @@ export default function TipoCambioView(){
           </table>
         </div>
 
-        <div className="text-muted" style={{marginTop:8}}>
+        <div className="text-muted" style={{ marginTop: 8 }}>
           Mostrando {items.length} registros · Límite:
-          <select value={limit} onChange={e=>setLimit(Number(e.target.value))} style={{marginLeft:6}}>
+          <select value={limit} onChange={e => setLimit(Number(e.target.value))} style={{ marginLeft: 6 }}>
             <option value={30}>30</option>
             <option value={60}>60</option>
             <option value={120}>120</option>
@@ -532,16 +708,16 @@ export default function TipoCambioView(){
         </div>
       </div>
 
-      <div className="card" style={{marginBottom:12}}>
+      <div className="card" style={{ marginBottom: 12 }}>
         <h3 className="card-title">Agregar manual</h3>
-        <div className="grid grid-tight" style={{alignItems:'end'}}>
+        <div className="grid grid-tight" style={{ alignItems: 'end' }}>
           <div className="form-group">
             <label>Fecha:</label>
-            <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} />
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
           </div>
           <div className="form-group">
             <label>USD → PEN:</label>
-            <input type="number" min="0" step="0.0001" value={usdPen} onChange={e=>setUsdPen(e.target.value)} />
+            <input type="number" min="0" step="0.0001" value={usdPen} onChange={e => setUsdPen(e.target.value)} />
           </div>
           <div>
             <button onClick={addManual} disabled={saving || !fecha || !usdPen} className="btn-primary">Guardar</button>
@@ -549,15 +725,15 @@ export default function TipoCambioView(){
         </div>
       </div>
 
-      <div className="card" style={{marginBottom:12}}>
+      <div className="card" style={{ marginBottom: 12 }}>
         <h3 className="card-title">Importar desde CSV</h3>
-        <p style={{marginBottom:12, color:'#6b7280', fontSize:'14px'}}>
+        <p style={{ marginBottom: 12, color: '#6b7280', fontSize: '14px' }}>
           Carga un archivo CSV con tipos de cambio. Selecciona las columnas que corresponden a la fecha y al precio.
         </p>
-        <button 
-          onClick={() => setCsvModal({...csvModal, open: true})}
+        <button
+          onClick={() => setCsvModal({ ...csvModal, open: true })}
           className="btn-primary"
-          style={{padding:'8px 16px'}}
+          style={{ padding: '8px 16px' }}
         >
           📁 Cargar archivo CSV
         </button>
@@ -585,7 +761,7 @@ export default function TipoCambioView(){
             maxWidth: '90vw'
           }}>
             <h3 style={{ margin: '0 0 16px 0' }}>Editar Tipo de Cambio</h3>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 Fecha:
@@ -607,7 +783,7 @@ export default function TipoCambioView(){
                 La fecha no se puede modificar
               </div>
             </div>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
                 USD → PEN:
@@ -645,7 +821,7 @@ export default function TipoCambioView(){
                 <option value="api">API</option>
               </select>
             </div>
-            
+
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setEditModal({ open: false, fecha: '', usdPen: '', fuente: 'manual' })}
@@ -702,7 +878,7 @@ export default function TipoCambioView(){
             overflow: 'auto'
           }}>
             <h3 style={{ margin: '0 0 16px 0' }}>Importar desde CSV</h3>
-            
+
             {csvModal.columns.length === 0 ? (
               <div>
                 <div style={{ marginBottom: '16px' }}>
@@ -731,9 +907,9 @@ export default function TipoCambioView(){
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
                     Archivo seleccionado:
                   </label>
-                  <div style={{ 
-                    padding: '8px', 
-                    backgroundColor: '#f3f4f6', 
+                  <div style={{
+                    padding: '8px',
+                    backgroundColor: '#f3f4f6',
                     borderRadius: '4px',
                     fontSize: '14px'
                   }}>
@@ -745,14 +921,14 @@ export default function TipoCambioView(){
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
                     Mapear columnas:
                   </label>
-                  
+
                   <div style={{ marginBottom: '12px' }}>
                     <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px' }}>
                       Columna de Fecha:
                     </label>
                     <select
                       value={csvModal.mapping.fecha}
-                      onChange={(e) => setCsvModal({...csvModal, mapping: {...csvModal.mapping, fecha: e.target.value}})}
+                      onChange={(e) => setCsvModal({ ...csvModal, mapping: { ...csvModal.mapping, fecha: e.target.value } })}
                       style={{
                         width: '100%',
                         padding: '8px',
@@ -773,7 +949,7 @@ export default function TipoCambioView(){
                     </label>
                     <select
                       value={csvModal.mapping.precio}
-                      onChange={(e) => setCsvModal({...csvModal, mapping: {...csvModal.mapping, precio: e.target.value}})}
+                      onChange={(e) => setCsvModal({ ...csvModal, mapping: { ...csvModal.mapping, precio: e.target.value } })}
                       style={{
                         width: '100%',
                         padding: '8px',
@@ -794,10 +970,10 @@ export default function TipoCambioView(){
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
                       Vista previa (primeras 5 filas):
                     </label>
-                    <div style={{ 
-                      maxHeight: '200px', 
-                      overflow: 'auto', 
-                      border: '1px solid #d1d5db', 
+                    <div style={{
+                      maxHeight: '200px',
+                      overflow: 'auto',
+                      border: '1px solid #d1d5db',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}>
@@ -805,9 +981,9 @@ export default function TipoCambioView(){
                         <thead style={{ backgroundColor: '#f3f4f6', position: 'sticky', top: 0 }}>
                           <tr>
                             {csvModal.columns.map(col => (
-                              <th key={col} style={{ 
-                                padding: '6px', 
-                                textAlign: 'left', 
+                              <th key={col} style={{
+                                padding: '6px',
+                                textAlign: 'left',
                                 borderBottom: '1px solid #d1d5db',
                                 fontWeight: 'bold'
                               }}>
@@ -820,8 +996,8 @@ export default function TipoCambioView(){
                           {csvModal.preview.map((row, idx) => (
                             <tr key={idx}>
                               {csvModal.columns.map(col => (
-                                <td key={col} style={{ 
-                                  padding: '6px', 
+                                <td key={col} style={{
+                                  padding: '6px',
                                   borderBottom: '1px solid #e5e7eb',
                                   backgroundColor: idx % 2 === 0 ? 'white' : '#f9fafb'
                                 }}>
@@ -875,6 +1051,100 @@ export default function TipoCambioView(){
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Pegar JSON de SUNAT */}
+      {jsonModal.open && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            width: '700px',
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            overflow: 'auto'
+          }}>
+            <h3 style={{ margin: '0 0 16px 0' }}>Pegar JSON de SUNAT</h3>
+
+            <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#eff6ff', borderRadius: '4px', border: '1px solid #bfdbfe' }}>
+              <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 'bold' }}>📋 Instrucciones:</p>
+              <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', lineHeight: '1.6' }}>
+                <li>Abre <a href="https://e-consulta.sunat.gob.pe/cl-at-ittipcam/tcS01Alias" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb' }}>SUNAT Tipo de Cambio</a> en tu navegador</li>
+                <li>Abre las <strong>Herramientas de Desarrollador</strong> (F12)</li>
+                <li>Ve a la pestaña <strong>Network</strong> (Red)</li>
+                <li>Haz clic en "Consultar" en la página de SUNAT</li>
+                <li>Busca la petición <code style={{ backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '2px' }}>listarTipoCambio</code> en Network</li>
+                <li>Clic derecho → <strong>Copy → Copy Response</strong></li>
+                <li>Pega el JSON aquí abajo</li>
+              </ol>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                JSON de SUNAT:
+              </label>
+              <textarea
+                value={jsonModal.jsonText}
+                onChange={(e) => setJsonModal({ ...jsonModal, jsonText: e.target.value })}
+                placeholder='[{"fecPublica":"01/01/2026","valTipo":"3.368","codTipo":"V"}, ...]'
+                style={{
+                  width: '100%',
+                  minHeight: '200px',
+                  padding: '12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  fontFamily: 'monospace',
+                  fontSize: '13px',
+                  resize: 'vertical'
+                }}
+                disabled={jsonModal.processing}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setJsonModal({ open: false, jsonText: '', processing: false })}
+                disabled={jsonModal.processing}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  backgroundColor: 'white',
+                  cursor: jsonModal.processing ? 'not-allowed' : 'pointer',
+                  opacity: jsonModal.processing ? 0.6 : 1
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleProcessJson}
+                disabled={jsonModal.processing || !jsonModal.jsonText.trim()}
+                style={{
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  backgroundColor: (!jsonModal.jsonText.trim() || jsonModal.processing) ? '#d1d5db' : '#2563eb',
+                  color: 'white',
+                  cursor: (!jsonModal.jsonText.trim() || jsonModal.processing) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {jsonModal.processing ? '⏳ Procesando...' : '✅ Importar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

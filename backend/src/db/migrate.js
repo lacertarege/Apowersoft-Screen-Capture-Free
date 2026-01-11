@@ -1,4 +1,4 @@
-export default async function migrate(db){
+export default async function migrate(db) {
   // tipos_inversion
   db.prepare(`CREATE TABLE IF NOT EXISTS tipos_inversion (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,9 +81,25 @@ export default async function migrate(db){
   db.prepare(`CREATE VIEW v_resumen_empresas AS
     WITH agg AS (
       SELECT t.id as ticker_id, t.ticker, t.nombre, t.moneda, t.tipo_inversion_id,
-             COALESCE(SUM(i.importe), 0) AS importe_total,
-             COALESCE(SUM(i.cantidad), 0) AS cantidad_total,
-             MIN(i.fecha) AS primera_compra
+             COALESCE(SUM(
+               CASE 
+                 WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.importe
+                 ELSE i.importe
+               END
+             ), 0) AS importe_total,
+             COALESCE(SUM(
+               CASE 
+                 WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.cantidad
+                 ELSE i.cantidad
+               END
+             ), 0) AS cantidad_total,
+             COALESCE(SUM(
+               CASE 
+                 WHEN i.tipo_operacion != 'DESINVERSION' THEN i.importe
+                 ELSE 0
+               END
+             ), 0) AS total_compras,
+             MIN(CASE WHEN i.tipo_operacion = 'INVERSION' THEN i.fecha END) AS primera_compra
       FROM tickers t
       LEFT JOIN inversiones i ON i.ticker_id = t.id
       GROUP BY t.id
@@ -105,14 +121,16 @@ export default async function migrate(db){
       ti.nombre AS tipo_inversion_nombre,
       a.primera_compra,
       a.importe_total,
-      a.cantidad_total,
+      ROUND(a.cantidad_total, 6) as cantidad_total,
       pv.fecha_rec AS fecha,
       COALESCE(pv.precio, 0) AS precio_reciente,
       ROUND(a.cantidad_total * COALESCE(pv.precio, 0), 2) AS balance,
       ROUND((a.cantidad_total * COALESCE(pv.precio, 0)) - a.importe_total, 2) AS rendimiento,
       CASE 
-        WHEN a.importe_total = 0 THEN 0 
-        ELSE ROUND(((a.cantidad_total * COALESCE(pv.precio, 0)) - a.importe_total) / a.importe_total, 4) 
+        WHEN ABS(a.cantidad_total) < 0.000001 THEN 
+             CASE WHEN a.total_compras > 0 THEN ROUND(((a.cantidad_total * COALESCE(pv.precio, 0)) - a.importe_total) / a.total_compras, 4) ELSE 0 END
+        ELSE 
+             CASE WHEN a.importe_total = 0 THEN 0 ELSE ROUND(((a.cantidad_total * COALESCE(pv.precio, 0)) - a.importe_total) / a.importe_total, 4) END
       END AS rentabilidad
     FROM agg a
     LEFT JOIN precio_val pv ON pv.ticker_id = a.ticker_id
