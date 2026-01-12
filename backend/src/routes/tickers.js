@@ -3,6 +3,7 @@ import { fetchPriceForSymbol, searchSymbols } from '../sources/marketData.js'
 import { importHistoryRange } from '../jobs/importHistoryRange.js'
 import { getLimaDate } from '../utils/date.js'
 import { InvestmentService } from '../services/InvestmentService.js'
+import logger from '../utils/logger.js'
 
 // Helpers de fecha: solo días hábiles (UTC)
 function lastWeekday(dateStr) {
@@ -230,9 +231,9 @@ export function tickersRouter(db) {
 
         if (bvlMatch) {
           rpjCode = bvlMatch.rpj_code
-          console.log(`✅ Auto-vinculado ${ticker} con RPJ: ${rpjCode}`)
+          logger.info('Auto-linked BVL ticker with RPJ', { ticker, rpjCode })
         } else {
-          console.log(`⚠️  Ticker BVL ${ticker} no encontrado en caché BVL`)
+          logger.warn('BVL ticker not found in cache', { ticker })
         }
       }
 
@@ -283,19 +284,19 @@ export function tickersRouter(db) {
       if (!tick) return res.status(404).json({ error: 'not found' })
 
       // Debug: Log del body recibido
-      console.log(`Refresh request for ${tick.ticker} (id: ${id}):`, req.body)
+      logger.debug('Refresh request received', { ticker: tick.ticker, id, body: req.body })
 
       // Obtener fecha de inicio: prioridad a from_date del body, luego última fecha de precios
       let from = '1970-01-01'
       if (req.body?.from_date) {
         // Usar la fecha de la primera inversión si se proporciona
         from = req.body.from_date
-        console.log(`Using from_date from body: ${from}`)
+        logger.debug('Using from_date from body', { from })
       } else {
         // Comportamiento original: usar la última fecha de precios
         const last = db.prepare('SELECT fecha FROM precios_historicos WHERE ticker_id=? ORDER BY fecha DESC LIMIT 1').get(id)
         from = last?.fecha ? nextWeekday(last.fecha) : '1970-01-01'
-        console.log(`Using last price date: ${from}`)
+        logger.debug('Using last price date', { from })
       }
 
       const to = lastWeekday(getLimaDate())
@@ -319,7 +320,7 @@ export function tickersRouter(db) {
         }
       }
 
-      console.log(`${tick.ticker}: Fechas faltantes detectadas: ${expectedDates.length} desde ${from} hasta ${to}`)
+      logger.debug('Missing dates detected', { ticker: tick.ticker, count: expectedDates.length, from, to })
 
       const result = await importHistoryRange(db, tick.ticker, from, to)
 

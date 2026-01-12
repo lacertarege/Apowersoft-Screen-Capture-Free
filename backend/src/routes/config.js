@@ -1,4 +1,5 @@
 import express from 'express'
+import logger from '../utils/logger.js'
 
 export function configRouter(db) {
   const r = express.Router()
@@ -19,17 +20,13 @@ export function configRouter(db) {
     try {
       const { fecha, from, to, limit, verify } = req.query
 
-      // DEBUG: Verificar estado de la base de datos
-      const totalCount = db.prepare('SELECT COUNT(*) as count FROM tipos_cambio').get()
-      console.log(`[DEBUG] Total registros en tipos_cambio: ${totalCount.count}`)
-
       // Disparar verificación de días recientes (no bloqueante) si verify=1
       if (verify === '1') {
         ; (async () => {
           try {
             const { backfillFxJob } = await import('../jobs/backfillFx.js')
             await backfillFxJob(db, false)
-          } catch (e) { console.error('verify tipo-cambio error', e) }
+          } catch (e) { logger.error('verify tipo-cambio error', { error: e.message }) }
         })()
       }
 
@@ -44,15 +41,11 @@ export function configRouter(db) {
       const lim = Number(limit) || 365
       sql += ' LIMIT ' + lim
 
-      console.log(`[DEBUG] SQL: ${sql}`)
-      console.log(`[DEBUG] Parámetros:`, params)
-
       const rows = db.prepare(sql).all(...params)
-      console.log(`[DEBUG] Registros devueltos: ${rows.length}`)
 
       res.json({ items: rows })
     } catch (e) {
-      console.error('GET /config/tipo-cambio error', e)
+      logger.error('GET /config/tipo-cambio error', { error: e.message })
       res.status(500).json({ error: 'Error obteniendo tipos de cambio' })
     }
   })
@@ -182,103 +175,108 @@ export function configRouter(db) {
   })
 
   // Sincronizar tipos de cambio desde la API de Decolecta (datos oficiales de SUNAT)
-// Sincronizar tipos de cambio desde la API de Decolecta (datos oficiales de SUNAT)
-r.post('/tipo-cambio/sync-sunat', async (req, res) => {
+  // Sincronizar tipos de cambio desde la API de Decolecta (datos oficiales de SUNAT)
+  r.post('/tipo-cambio/sync-sunat', async (req, res) => {
     try {
-        console.log('[DECOLECTA] Iniciando sincronización...')
+      logger.info('DECOLECTA sync started')
 
-        // Importar funciones
-        const { fetchSunatExchangeRates } = await import('../sources/sunat.js')
-        const { getLimaDate } = await import('../utils/date.js')
+      // Importar funciones
+      const { fetchSunatExchangeRates } = await import('../sources/sunat.js')
+      const { getLimaDate } = await import('../utils/date.js')
 
-        // Token
-        const apiToken = process.env.DECOLECTA_API_TOKEN || 'sk_12751.oph635WotcsmGvQNMQgwOlx1Yi7rHSwy'
+      // Token - DEBE estar configurado en variables de entorno
+      const apiToken = process.env.DECOLECTA_API_TOKEN
+      if (!apiToken) {
+        return res.status(500).json({
+          error: 'DECOLECTA_API_TOKEN no configurado. Agregar a .env'
+        })
+      }
 
-        // Identificar fechas faltantes (últimos 30 días) - misma lógica que backfillFx.js
-        const hoyLima = getLimaDate()
-        const dates = db.prepare(`WITH RECURSIVE dates(d) AS (
+      // Identificar fechas faltantes (últimos 30 días) - misma lógica que backfillFx.js
+      const hoyLima = getLimaDate()
+      const dates = db.prepare(`WITH RECURSIVE dates(d) AS (
         SELECT DATE(?,'-30 day')
         UNION ALL
         SELECT DATE(d,'+1 day') FROM dates WHERE d < DATE(?)
       ) SELECT d FROM dates WHERE d NOT IN (SELECT fecha FROM tipos_cambio)`).all(hoyLima, hoyLima).map(r => r.d)
 
-        if (dates.length === 0) {
-            console.log('[DECOLECTA] No hay fechas faltantes')
-            return res.json({ ok: true, inserted: 0, updated: 0, total: 0, message: 'No hay fechas faltantes' })
+      if (dates.length === 0) {
+        logger.info('DECOLECTA: no missing dates')
+        return res.json({ ok: true, inserted: 0, updated: 0, total: 0, message: 'No hay fechas faltantes' })
+      }
+
+      logger.info('DECOLECTA: missing dates detected', { count: dates.length })
+
+      // Agrupar por mes/año para consultas eficientes
+      const monthsToFetch = new Set()
+      dates.forEach(dateStr => {
+        const [year, month] = dateStr.split('-')
+        monthsToFetch.add(`${year}-${month}`)
+      })
+
+      logger.info('DECOLECTA: fetching months', { months: monthsToFetch.size })
+
+      // Obtener datos de todos los meses necesarios
+      let items = []
+      for (const yearMonth of monthsToFetch) {
+        const [year, month] = yearMonth.split('-')
+
+        try {
+          const monthItems = await fetchSunatExchangeRates(apiToken, null, parseInt(month), parseInt(year))
+          items = items.concat(monthItems)
+          logger.debug('DECOLECTA: month fetched', { yearMonth, count: monthItems.length })
+        } catch (error) {
+          logger.error('DECOLECTA: month fetch error', { yearMonth, error: error.message })
         }
+      }
 
-        console.log(`[DECOLECTA] ${dates.length} fechas faltantes detectadas`)
+      if (items.length === 0) {
+        return res.status(404).json({ error: 'No se obtuvieron datos de la API' })
+      }
 
-        // Agrupar por mes/año para consultas eficientes
-        const monthsToFetch = new Set()
-        dates.forEach(dateStr => {
-            const [year, month] = dateStr.split('-')
-            monthsToFetch.add(`${year}-${month}`)
-        })
+      // Filtrar solo fechas que realmente faltan en nuestra BD
+      const datesSet = new Set(dates)
+      items = items.filter(item => datesSet.has(item.fecha))
 
-        console.log(`[DECOLECTA] Consultando ${monthsToFetch.size} mes(es) a la API`)
+      logger.debug('DECOLECTA: records to insert', { count: items.length })
 
-        // Obtener datos de todos los meses necesarios
-        let items = []
-        for (const yearMonth of monthsToFetch) {
-            const [year, month] = yearMonth.split('-')
-
-            try {
-                const monthItems = await fetchSunatExchangeRates(apiToken, null, parseInt(month), parseInt(year))
-                items = items.concat(monthItems)
-                console.log(`[DECOLECTA] ✓ ${monthItems.length} registros obtenidos para ${yearMonth}`)
-            } catch (error) {
-                console.error(`[DECOLECTA] ✗ Error consultando ${yearMonth}:`, error.message)
-            }
-        }
-
-        if (items.length === 0) {
-            return res.status(404).json({ error: 'No se obtuvieron datos de la API' })
-        }
-
-        // Filtrar solo fechas que realmente faltan en nuestra BD
-        const datesSet = new Set(dates)
-        items = items.filter(item => datesSet.has(item.fecha))
-
-        console.log(`[DECOLECTA] ${items.length} registros para insertar (solo fechas faltantes)`)
-
-        // Insertar en la BD
-        const stmt = db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
+      // Insertar en la BD
+      const stmt = db.prepare(`INSERT INTO tipos_cambio (fecha, usd_pen, fuente_api) VALUES (?,?,?)
         ON CONFLICT(fecha) DO UPDATE SET usd_pen=excluded.usd_pen, fuente_api=excluded.fuente_api`)
 
-        let inserted = 0
-        let updated = 0
-        let errors = []
+      let inserted = 0
+      let updated = 0
+      let errors = []
 
-        for (const item of items) {
-            const { fecha, usd_pen } = item
-            try {
-                const existing = db.prepare('SELECT fecha FROM tipos_cambio WHERE fecha = ?').get(fecha)
-                stmt.run(fecha, usd_pen, 'sunat')
-                if (existing) {
-                    updated++
-                } else {
-                    inserted++
-                }
-            } catch (e) {
-                errors.push({ fecha, error: e.message })
-            }
+      for (const item of items) {
+        const { fecha, usd_pen } = item
+        try {
+          const existing = db.prepare('SELECT fecha FROM tipos_cambio WHERE fecha = ?').get(fecha)
+          stmt.run(fecha, usd_pen, 'sunat')
+          if (existing) {
+            updated++
+          } else {
+            inserted++
+          }
+        } catch (e) {
+          errors.push({ fecha, error: e.message })
         }
+      }
 
-        console.log(`[DECOLECTA] Sincronización completada: ${inserted} insertados, ${updated} actualizados`)
+      logger.info('DECOLECTA sync completed', { inserted, updated })
 
-        res.json({
-            ok: true,
-            inserted,
-            updated,
-            total: items.length,
-            errors: errors.length > 0 ? errors : undefined
-        })
+      res.json({
+        ok: true,
+        inserted,
+        updated,
+        total: items.length,
+        errors: errors.length > 0 ? errors : undefined
+      })
     } catch (e) {
-        console.error('POST /config/tipo-cambio/sync-sunat error', e)
-        res.status(500).json({ error: e.message || 'Error sincronizando con SUNAT' })
+      logger.error('POST /config/tipo-cambio/sync-sunat error', { error: e.message })
+      res.status(500).json({ error: e.message || 'Error sincronizando con SUNAT' })
     }
-})
+  })
 
 
   // Presupuesto: leer o establecer (id fijo = 1)

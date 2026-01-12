@@ -1,6 +1,7 @@
 import { request } from 'undici'
 import { memoizeAsync } from '../utils/cache.js'
 import pRetry from 'p-retry'
+import logger from '../utils/logger.js'
 
 const AV_KEY = process.env.ALPHAVANTAGE_KEY
 const POLY_KEY = process.env.POLYGON_KEY
@@ -145,7 +146,7 @@ async function _fetchPriceForSymbol(tickerInput) {
       if (data && data.results && data.results[0]) {
         return { price: data.results[0].c, source: `polygon:${exchange}` }
       }
-    } catch { }
+    } catch (e) { logger.debug('Polygon spot price failed', { ticker, error: e.message }) }
   }
 
   // Fallback Alpha Vantage GLOBAL_QUOTE (si exchange lo soporta)
@@ -155,7 +156,7 @@ async function _fetchPriceForSymbol(tickerInput) {
       const data = await fetchJson(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${AV_KEY}`)
       const p = parseFloat(data?.['Global Quote']?.['05. price'])
       if (!Number.isNaN(p)) return { price: p, source: `alphavantage:${exchange}` }
-    } catch { }
+    } catch (e) { logger.debug('AlphaVantage quote failed', { ticker, error: e.message }) }
   }
 
   // Yahoo Finance fallback (mejor para BVL)
@@ -164,8 +165,8 @@ async function _fetchPriceForSymbol(tickerInput) {
       const symbol = config.yahoo(ticker)
       // Implementación simple de Yahoo - solo para fallback
       // La función fetchDailyHistory tiene mejor implementación de Yahoo
-      console.log(`Yahoo Finance fallback para ${symbol} (exchange: ${exchange})`)
-    } catch { }
+      logger.debug('Yahoo Finance fallback attempted', { symbol, exchange })
+    } catch (e) { logger.debug('Yahoo fallback failed', { ticker, error: e.message }) }
   }
 
   // Última opción: servicio local http://localhost:8000/tiempo-real/{ticker}
