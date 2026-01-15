@@ -283,18 +283,22 @@ export class InvestmentService {
 
         currentQty -= soldQty
 
-        // Regla 3: Reset si llega a 0
-        if (currentQty <= 0.000001) {
+        // Regla 3: Reset si llega a 0 (con tolerancia para errores de punto flotante)
+        if (Math.abs(currentQty) < 0.01) {
           currentQty = 0
           currentCpp = 0
         }
       }
     }
 
+    // Corrección final de precisión de punto flotante
+    const cantidad = Math.abs(currentQty) < 0.01 ? 0 : currentQty
+    const cpp = cantidad === 0 ? 0 : currentCpp
+
     return {
-      cantidad: currentQty,
-      cpp: currentCpp,
-      totalInvertido: currentQty * currentCpp,
+      cantidad,
+      cpp,
+      totalInvertido: cantidad * cpp,
       gananciaRealizada: totalRealizedGain
     }
   }
@@ -328,6 +332,72 @@ export class InvestmentService {
     return {
       isValid: errors.length === 0,
       errors
+    }
+  }
+
+  /**
+   * Calcula flujos de capital distinguiendo aportes externos de reinversiones
+   * REGLA DE NEGOCIO:
+   * - REINVERSION (vender A para comprar B): Neutro en aportes externos
+   * - DIVIDENDO reinvertido: SÍ suma al capital (ganancia realizada reinvertida)
+   * - FRESH_CASH: Aporte externo normal
+   * 
+   * @param {object} db - Instancia de base de datos
+   * @param {number} tickerId - ID del ticker (null para todos)
+   * @param {string} fromDate - Fecha inicio (YYYY-MM-DD)
+   * @param {string} toDate - Fecha fin (YYYY-MM-DD)
+   * @returns {Object} { externalInflows, reinvestmentInflows, dividendInflows, outflows, netExternalFlow }
+   */
+  static calculateCapitalFlows(db, tickerId = null, fromDate = '1970-01-01', toDate = '2100-12-31') {
+    let query = `
+      SELECT fecha, importe, cantidad, tipo_operacion, origen_capital
+      FROM inversiones
+      WHERE fecha >= ? AND fecha <= ?
+    `
+    const params = [fromDate, toDate]
+
+    if (tickerId) {
+      query += ` AND ticker_id = ?`
+      params.push(tickerId)
+    }
+
+    query += ` ORDER BY fecha ASC`
+
+    const transactions = db.prepare(query).all(...params)
+
+    let externalInflows = 0      // Aportes frescos + dividendos reinvertidos
+    let reinvestmentInflows = 0  // Reinversiones de capital (neutras)
+    let dividendInflows = 0      // Dividendos reinvertidos (van a external también)
+    let outflows = 0             // Desinversiones
+
+    for (const tx of transactions) {
+      const amount = Number(tx.importe)
+      const origen = (tx.origen_capital || 'FRESH_CASH').toUpperCase()
+
+      if (tx.tipo_operacion === 'DESINVERSION') {
+        outflows += amount
+      } else {
+        // INVERSION
+        if (origen === 'REINVERSION') {
+          // Reinversión de capital: NEUTRA
+          reinvestmentInflows += amount
+        } else if (origen === 'DIVIDENDO') {
+          // Dividendo reinvertido: Ganancia realizada = SÍ cuenta como aporte
+          dividendInflows += amount
+          externalInflows += amount  // Suma a external
+        } else {
+          // FRESH_CASH o cualquier otro: Aporte externo
+          externalInflows += amount
+        }
+      }
+    }
+
+    return {
+      externalInflows,           // Aportes externos (incluyendo dividendos reinvertidos)
+      reinvestmentInflows,       // Reinversiones de capital (neutras, para info)
+      dividendInflows,           // Solo dividendos reinvertidos (subset de external)
+      outflows,                  // Retiros/Ventas
+      netExternalFlow: externalInflows - outflows  // Aportes netos
     }
   }
 }

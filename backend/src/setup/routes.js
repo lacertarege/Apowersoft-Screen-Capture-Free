@@ -9,6 +9,7 @@ import { optionsRouter } from '../routes/options.js'
 import { dividendosRouter } from '../routes/dividendos.js'
 import { tiposInversionRouter } from '../routes/tiposInversion.js'
 import { bvlRouter } from '../routes/bvl.js'
+import { plataformasRouter } from '../routes/plataformas.js'
 
 export function buildRoutes(app, db) {
   // Configuración CORS mejorada con paquete 'cors'
@@ -30,7 +31,7 @@ export function buildRoutes(app, db) {
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     maxAge: 86400 // 24 hours
   }))
@@ -50,5 +51,6 @@ export function buildRoutes(app, db) {
   app.use('/dividendos', dividendosRouter(db))
   app.use('/tipos-inversion', tiposInversionRouter(db))
   app.use('/bvl', bvlRouter(db))
+  app.use('/plataformas', plataformasRouter(db))
   app.get('/health', (req, res) => res.json({ ok: true }))
 }

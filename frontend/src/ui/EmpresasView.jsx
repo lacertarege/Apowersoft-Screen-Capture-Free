@@ -60,7 +60,7 @@ export default function EmpresasView() {
       if (status.connected) {
         setErrorBackend(false)
         // Cargar datos si la conexión es exitosa
-        fetchTickers().catch(() => setErrorBackend(true))
+        fetchTickers('', 1, 100, showClosed).catch(() => setErrorBackend(true))
         fetch(`${API}/config/tipos-inversion`)
           .then(r => r.json())
           .then(d => setTipos(d.items || []))
@@ -79,7 +79,7 @@ export default function EmpresasView() {
         setErrorBackend(true)
       }
     })
-  }, [fetchTickers])
+  }, [fetchTickers, showClosed])
 
   const onSaveTicker = async (payload) => {
     try {

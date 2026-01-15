@@ -3,6 +3,7 @@ import { fetchPriceForSymbol, searchSymbols } from '../sources/marketData.js'
 import { importHistoryRange } from '../jobs/importHistoryRange.js'
 import { getLimaDate } from '../utils/date.js'
 import { InvestmentService } from '../services/InvestmentService.js'
+import { CacheService } from '../services/CacheService.js'
 import logger from '../utils/logger.js'
 
 // Helpers de fecha: solo días hábiles (UTC)
@@ -24,7 +25,8 @@ export function tickersRouter(db) {
   const r = express.Router()
 
   r.get('/', (req, res) => {
-    const { q = '', page = 1, pageSize = 20 } = req.query
+    const { q = '', page = 1, pageSize = 20, includeHistory = 'false' } = req.query
+    const showHistory = includeHistory === 'true' || includeHistory === '1'
     const offset = (Number(page) - 1) * Number(pageSize)
     const rows = db.prepare(`
       SELECT
@@ -79,10 +81,15 @@ export function tickersRouter(db) {
         rendimiento,
         rentabilidad
       }
-    }).filter(row => row.cantidad_total > 0.000001) // Solo posiciones abiertas
+    })
+
+    // Filtrar posiciones cerradas solo si no se solicita historial
+    const filteredRows = showHistory
+      ? processedRows
+      : processedRows.filter(row => row.cantidad_total > 0.000001)
 
     const total = db.prepare(`SELECT COUNT(*) as c FROM v_resumen_empresas v WHERE v.ticker LIKE ? OR v.nombre LIKE ?`).get(`%${q}%`, `%${q}%`).c
-    res.json({ items: processedRows, total })
+    res.json({ items: filteredRows, total })
   })
 
   r.get('/:id', (req, res) => {
@@ -169,6 +176,10 @@ export function tickersRouter(db) {
         tipo_operacion === 'INVERSION' ? origen_capital : null,
         realizedReturnValue
       )
+
+      // Invalidar cache de portfolio tras cambio en inversiones
+      CacheService.invalidatePortfolioCache(db, 'inversion_creada')
+
       return res.status(201).json({ id: info.lastInsertRowid })
     } catch (e) {
       return res.status(400).json({ error: e.message })
@@ -218,6 +229,15 @@ export function tickersRouter(db) {
     const exchange = req.body.exchange || 'NYSE'
 
     try {
+      // Verificar si el ticker ya existe (prevenir UNIQUE constraint error)
+      const existing = db.prepare('SELECT id, ticker, nombre FROM tickers WHERE UPPER(ticker) = ?').get(ticker.toUpperCase())
+      if (existing) {
+        return res.status(409).json({
+          error: `El ticker "${ticker.toUpperCase()}" ya existe con el nombre "${existing.nombre}"`,
+          existingId: existing.id
+        })
+      }
+
       // Si es BVL, intentar auto-vincular con datos BVL
       let rpjCode = req.body.rpj_code || null
 
@@ -259,7 +279,7 @@ export function tickersRouter(db) {
         bvl_auto_linked: exchange === 'BVL' && rpjCode ? true : false
       })
     } catch (error) {
-      console.error('Error creando ticker:', error)
+      logger.error('Error creating ticker', { error: error.message })
       return res.status(400).json({ error: error.message })
     }
   })
@@ -338,7 +358,7 @@ export function tickersRouter(db) {
 
       res.json({ ok: true, from, to, ...result, message })
     } catch (e) {
-      console.error('refresh error', e)
+      logger.error('Refresh error', { error: e.message })
       res.status(500).json({ error: e.message })
     }
   })
@@ -534,7 +554,7 @@ export function tickersRouter(db) {
         ticker: { id: ticker.id, ticker: ticker.ticker, nombre: ticker.nombre, moneda: ticker.moneda, tipo: ticker.tipo_nombre }
       })
     } catch (error) {
-      console.error('Error en evolucion:', error)
+      logger.error('Evolution error', { error: error.message })
       res.status(500).json({ error: 'Error al calcular evolución' })
     }
   })

@@ -5,7 +5,8 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
     const [importe, setImporte] = useState('')
     const [cantidad, setCantidad] = useState('')
     const [fecha, setFecha] = useState('')
-    const [plataforma, setPlataforma] = useState('Trii')
+    const [plataforma, setPlataforma] = useState('')
+    const [plataformasDisponibles, setPlataformasDisponibles] = useState([])
     const [stockDisponible, setStockDisponible] = useState(null)
     const [cargandoStock, setCargandoStock] = useState(false)
     const [cpp, setCpp] = useState(null)
@@ -17,7 +18,6 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
             setFecha(hoy)
             setImporte('')
             setCantidad('')
-            setPlataforma('Trii')
             setStockDisponible(null)
             setCpp(null)
             setRendimiento(null)
@@ -39,17 +39,38 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
                     const data = await response.json()
                     const items = data.items || []
 
-                    // Calcular stock neto
+                    // Calcular stock neto con alta precisión
+                    // Transacciones sin tipo_operacion se tratan como INVERSION (legacy)
                     let stock = 0
+                    const plataformasUsadas = new Set()
+
                     items.forEach(inv => {
-                        if (inv.tipo_operacion === 'INVERSION') {
-                            stock += Number(inv.cantidad || 0)
-                        } else if (inv.tipo_operacion === 'DESINVERSION') {
-                            stock -= Number(inv.cantidad || 0)
+                        const qty = Number(inv.cantidad || 0)
+                        const tipo = (inv.tipo_operacion || 'INVERSION').toUpperCase()
+
+                        if (tipo === 'INVERSION') {
+                            stock += qty
+                            // Registrar plataforma usada en inversiones
+                            if (inv.plataforma) plataformasUsadas.add(inv.plataforma)
+                        } else if (tipo === 'DESINVERSION') {
+                            stock -= qty
                         }
+                        // DIVIDENDO no afecta el stock
                     })
 
+                    // Usar el stock con precisión completa
                     setStockDisponible(stock)
+
+                    // Establecer plataformas disponibles (solo las que tienen inversiones abiertas)
+                    const platformList = Array.from(plataformasUsadas)
+                    setPlataformasDisponibles(platformList)
+
+                    // Auto-seleccionar si solo hay una plataforma
+                    if (platformList.length === 1) {
+                        setPlataforma(platformList[0])
+                    } else if (platformList.length > 0 && !plataforma) {
+                        setPlataforma(platformList[0])
+                    }
                 }
             } catch (error) {
                 console.error('Error obteniendo stock:', error)
@@ -130,7 +151,6 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
     function save() {
         if (!importe || !cantidad || !fecha) return
         const payload = { fecha, importe: Number(importe), cantidad: Number(cantidad), plataforma, tipo_operacion: 'DESINVERSION' }
-        console.log('🔍 DESINVERSION Modal - Sending:', payload)
         onSave(payload)
     }
 
@@ -138,10 +158,15 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
     function handleRetiroTotal() {
         if (!stockDisponible || stockDisponible <= 0) return
 
-        // Usar el CPP como estimación del precio de salida
-        // El usuario puede ajustar el importe manualmente si el precio actual es diferente
-        const precioEstimado = cpp || 0
-        const importeEstimado = stockDisponible * precioEstimado
+        // Buscar el precio actual en todas las posibles ubicaciones del objeto empresa
+        // Prioridad: precio.precio > precio_reciente > CPP como último recurso
+        const precioActual =
+            empresa?.precio?.precio ||   // Desde /tickers/:id
+            empresa?.precio_reciente ||  // Desde lista de tickers
+            cpp ||                        // CPP como fallback
+            0
+
+        const importeEstimado = stockDisponible * precioActual
 
         setCantidad(stockDisponible.toString())
         setImporte(importeEstimado.toFixed(2))
@@ -155,45 +180,31 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
 
     return (
         <div className="modal-overlay" onClick={(e) => e.target.className === 'modal-overlay' && onClose()}>
-            <div className="modal-content" style={{ maxWidth: '550px', maxHeight: '90vh' }}>
-                {/* Header */}
-                <div className="modal-header">
+            <div className="modal-content" style={{ maxWidth: '500px', maxHeight: '100vh', overflow: 'auto' }}>
+                {/* Header - Compact */}
+                <div className="modal-header" style={{ padding: '12px 16px' }}>
                     <div>
-                        <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--orange-dark)' }}>
-                            ↓ Desinversión
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--orange-dark)' }}>
+                            ↓ Desinversión • {empresa?.ticker}
                         </h3>
-                        <p style={{
-                            margin: '4px 0 0 0',
-                            fontSize: '14px',
-                            color: 'var(--fg-secondary)',
-                            fontWeight: 500
-                        }}>
-                            {empresa?.ticker} • {empresa?.nombre}
-                        </p>
                     </div>
                     <button
                         onClick={onClose}
                         style={{
                             background: 'none',
                             border: 'none',
-                            fontSize: '28px',
+                            fontSize: '24px',
                             cursor: 'pointer',
                             padding: 0,
-                            width: '32px',
-                            height: '32px',
+                            width: '28px',
+                            height: '28px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            borderRadius: '8px',
-                            color: 'var(--fg-secondary)',
-                            transition: 'all var(--transition-fast)'
+                            borderRadius: '6px',
+                            color: 'var(--fg-secondary)'
                         }}
-                        onMouseOver={(e) => e.target.style.backgroundColor = 'rgba(0,0,0,0.06)'}
-                        onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
-                        aria-label="Cerrar"
-                    >
-                        ×
-                    </button>
+                    >×</button>
                 </div>
 
                 {/* Body */}
@@ -401,13 +412,24 @@ export default function NuevaDesinversionModal({ open, onClose, onSave, empresa 
                         {/* Plataforma */}
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label>Plataforma</label>
-                            <select value={plataforma} onChange={e => setPlataforma(e.target.value)}>
-                                <option value="Trii">Trii</option>
-                                <option value="Tyba">Tyba</option>
-                                <option value="Etoro">Etoro</option>
-                                <option value="Pacifico seguros">Pacífico Seguros</option>
-                                <option value="BBVA">BBVA</option>
+                            <select
+                                value={plataforma}
+                                onChange={e => setPlataforma(e.target.value)}
+                                disabled={plataformasDisponibles.length <= 1}
+                            >
+                                {plataformasDisponibles.length === 0 ? (
+                                    <option value="">Sin plataformas</option>
+                                ) : (
+                                    plataformasDisponibles.map(p => (
+                                        <option key={p} value={p}>{p}</option>
+                                    ))
+                                )}
                             </select>
+                            {plataformasDisponibles.length === 1 && (
+                                <div style={{ fontSize: '11px', color: 'var(--fg-secondary)', marginTop: '4px' }}>
+                                    Única plataforma con posición abierta
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -1,5 +1,11 @@
 import express from 'express'
 import { getLimaDate, getLimaYear } from '../utils/date.js'
+import {
+  getPriceNearDate,
+  getCachedBenchmark,
+  getBenchmarksForYear,
+  calculateBalanceAtDate
+} from '../services/BenchmarkService.js'
 
 export function dashboardRouter(db) {
   const r = express.Router()
@@ -56,67 +62,89 @@ export function dashboardRouter(db) {
           })
           dividends = Object.entries(divMap).map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date))
 
-          // Process Investments and Prices
+          // Process Investments - Build a map of daily changes
           const invMap = {};
           inversiones.forEach(i => {
             if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {};
-            if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0 };
+            if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { amt: 0, q: 0, ops: [] };
 
-            const isReinvestment = i.origen_capital === 'REINVERSION'
             const isDesinversion = i.tipo_operacion === 'DESINVERSION'
+            const amount = Number(i.importe)
+            const qty = Number(i.cantidad)
 
-            // Logic:
-            // Quantity always changes
-            if (isDesinversion) {
-              invMap[i.ticker_id][i.fecha].q -= Number(i.cantidad);
-              invMap[i.ticker_id][i.fecha].imp -= Number(i.importe); // Withdrawals reduce capital
-            } else {
-              invMap[i.ticker_id][i.fecha].q += Number(i.cantidad);
-              // Capital only increases if NOT reinvestment
-              if (!isReinvestment) {
-                invMap[i.ticker_id][i.fecha].imp += Number(i.importe);
-              }
-            }
+            // Store operations for CPP calculation
+            invMap[i.ticker_id][i.fecha].ops.push({
+              tipo: i.tipo_operacion,
+              amount,
+              qty
+            })
           })
 
           const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
 
           let curr = new Date(from + 'T00:00:00Z')
-          const stats = {}; tickerIds.forEach(id => {
-            // Need to calculate initial state correctly considering reinvestments?
-            // Complex to do in SQL in one line. 
-            // Better to iterate all investments from start to calculate initial state.
+
+          // Initialize stats with CPP calculation for transactions BEFORE 'from'
+          const stats = {};
+          tickerIds.forEach(id => {
+            // Get all investments before 'from' to calculate initial state
             const allInv = inversiones.filter(inv => inv.ticker_id === id && inv.fecha < from)
-            let initImp = 0
-            let initQ = 0
+            let qty = 0
+            let cpp = 0
+
+            // Apply CPP rules
             allInv.forEach(inv => {
               const amt = Number(inv.importe)
-              const qty = Number(inv.cantidad)
-              const isReinv = inv.origen_capital === 'REINVERSION'
-              const isDes = inv.tipo_operacion === 'DESINVERSION'
+              const q = Number(inv.cantidad)
 
-              if (isDes) {
-                initQ -= qty
-                initImp -= amt
+              if (inv.tipo_operacion === 'DESINVERSION') {
+                qty -= q
+                if (qty < 0.01) { qty = 0; cpp = 0; }
               } else {
-                initQ += qty
-                if (!isReinv) initImp += amt
+                // INVERSION - update CPP
+                const prevCost = qty * cpp
+                qty += q
+                if (qty > 0) {
+                  cpp = (prevCost + amt) / qty
+                }
               }
             })
 
             const lp = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id=? AND fecha < ? ORDER BY fecha DESC LIMIT 1').get(id, from)
-            stats[id] = { q: initQ, imp: initImp, lp: Number(lp?.precio || 0) }
+            stats[id] = { q: qty, cpp: cpp, lp: Number(lp?.precio || 0) }
           })
 
           while (true) {
             const dStr = curr.toISOString().slice(0, 10); if (dStr > hoy) break
             let invDia = 0, balDia = 0
+
             tickerIds.forEach(id => {
-              const s = stats[id]; const d = invMap[id]?.[dStr]; if (d) { s.imp += d.imp; s.q += d.q; }
+              const s = stats[id]
+              const dayOps = invMap[id]?.[dStr]?.ops || []
+
+              // Apply day's operations using CPP rules
+              dayOps.forEach(op => {
+                if (op.tipo === 'DESINVERSION') {
+                  s.q -= op.qty
+                  if (s.q < 0.01) { s.q = 0; s.cpp = 0; }
+                } else {
+                  // INVERSION - update CPP (includes reinvestments now!)
+                  const prevCost = s.q * s.cpp
+                  s.q += op.qty
+                  if (s.q > 0) {
+                    s.cpp = (prevCost + op.amount) / s.q
+                  }
+                }
+              })
+
               const p = preMap[id]?.[dStr] || s.lp; s.lp = p;
-              invDia += s.imp; balDia += s.q * p
+
+              // Capital Invertido = Qty * CPP (same as Empresas!)
+              invDia += (s.q * s.cpp)
+              balDia += (s.q * p)
             })
-            items.push({ fecha: dStr, inversionUsd: invDia, balanceUsd: balDia })
+
+            items.push({ fecha: dStr, inversionUsd: Number(invDia.toFixed(2)), balanceUsd: Number(balDia.toFixed(2)) })
             curr.setUTCDate(curr.getUTCDate() + 1)
           }
         }
@@ -182,7 +210,7 @@ export function dashboardRouter(db) {
       if (map[range] && map[range] !== 'ytd') { const d = new Date(); d.setDate(now.getDate() - map[range]); from = d.toISOString().slice(0, 10); }
       else if (range === 'ytd') from = `${now.getFullYear()}-01-01`;
 
-      //Apply minimum start date for the currency when range is 'all'
+      // Apply minimum start date for the currency when range is 'all'
       if (range === 'all' && minStartDates[currency]) {
         from = minStartDates[currency];
       }
@@ -192,156 +220,114 @@ export function dashboardRouter(db) {
       const tickerIds = tickers.map(t => t.id)
       const hoy = getLimaDate()
 
-      // For currency-specific minimum dates, filter out earlier investments
-      let inversiones
-      if (range === 'all' && minStartDates[currency]) {
-        inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad, origen_capital, tipo_operacion FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(minStartDates[currency])
-      } else {
-        inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad, origen_capital, tipo_operacion FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
-      }
+      // Get TOTAL dividends for this currency (same as Empresas PortfolioSummary)
+      const totalDividendsResult = db.prepare(`SELECT COALESCE(SUM(monto), 0) as total FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')})`).get()
+      const totalDividends = Number(totalDividendsResult?.total || 0)
+
+      // Get TOTAL realized gains for this currency (same as InvestmentService.calculatePositionStats)
+      const totalRealizedResult = db.prepare(`SELECT COALESCE(SUM(realized_return), 0) as total FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) AND tipo_operacion = 'DESINVERSION'`).get()
+      const totalRealizedGains = Number(totalRealizedResult?.total || 0)
+
+      // Fetch ALL investments (need full history for CPP calculation)
+      const inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad, tipo_operacion FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC, id ASC`).all()
 
       const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
-      const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
+      const dividendos = db.prepare(`SELECT fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(from)
 
-      const invMap = {}; inversiones.forEach(i => {
-        if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}; if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { imp: 0, q: 0, netInv: 0 };
-        invMap[i.ticker_id][i.fecha].imp += Number(i.importe);
-        invMap[i.ticker_id][i.fecha].q += Number(i.cantidad);
+      // Build investment operations map
+      const invMap = {}
+      inversiones.forEach(i => {
+        if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {}
+        if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { ops: [] }
 
-        // Calculate Net External Investment (Exclude Reinvestments)
-        const isReinvestment = i.origen_capital === 'REINVERSION'
-        const isDesinversion = i.tipo_operacion === 'DESINVERSION'
-        const amount = Number(i.importe)
-
-        if (isDesinversion) {
-          invMap[i.ticker_id][i.fecha].netInv -= amount;
-        } else if (!isReinvestment) {
-          // Fresh Capital
-          invMap[i.ticker_id][i.fecha].netInv += amount;
-        }
+        invMap[i.ticker_id][i.fecha].ops.push({
+          tipo: i.tipo_operacion,
+          amount: Number(i.importe),
+          qty: Number(i.cantidad)
+        })
       })
+
       const preMap = {}; precios.forEach(p => { if (!preMap[p.ticker_id]) preMap[p.ticker_id] = {}; preMap[p.ticker_id][p.fecha] = Number(p.precio); })
-      const divMap = {};
-      const dividendsRaw = [];
 
+      // Aggregate dividends by date (for chart markers only)
+      const divByDate = {}
       dividendos.forEach(d => {
-        if (!divMap[d.ticker_id]) divMap[d.ticker_id] = {};
-        const f = d.fecha.slice(0, 10);
-        divMap[d.ticker_id][f] = (divMap[d.ticker_id][f] || 0) + Number(d.monto);
-        dividendsRaw.push({ date: f, amount: Number(d.monto) })
+        const f = d.fecha.slice(0, 10)
+        divByDate[f] = (divByDate[f] || 0) + Number(d.monto)
       })
+      const dividends = Object.entries(divByDate).map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date))
 
-      // Aggregate dividends by date for the chart markers
-      const dividends = Object.entries(dividendsRaw.reduce((acc, curr) => {
-        acc[curr.date] = (acc[curr.date] || 0) + curr.amount;
-        return acc;
-      }, {})).map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date));
-
-
-      let curr = new Date(from + 'T00:00:00Z')
-      const stats = {};
-
-      // Initialize stats - for currency-specific minimum dates, start from zero
-      const shouldStartFromZero = range === 'all' && minStartDates[currency]
-
-      // We need accurate initial Net Investment if not starting from zero.
-      // SQL Init Calculation:
-      /*
-         If not zero, calculate Init Net Inv from historic data.
-      */
-
+      // Initialize stats with CPP for transactions BEFORE 'from'
+      const stats = {}
       tickerIds.forEach(id => {
-        if (shouldStartFromZero) {
-          stats[id] = { q: 0, lv: 0, lp: 0, netInvAcum: 0 }
-        } else {
-          // Load previous state
-          const allInv = inversiones.filter(inv => inv.ticker_id === id && inv.fecha < from) // Since we fetched only >= minStart if applicable, this might be empty if loop logic holds.
-          // Wait, line 198 fetches >= minStart. Line 200 fetches All.
-          // If range is 'all' and minStart exists, we only fetched relevant investments.
-          // But 'from' is derived from minStart.
-          // So 'stats' init should be 0 if we assume the chart starts at minStart.
-          // BUT, calculating correct Balance requires previous Quantity.
-          // Re-fetching strictly previous data if we are clipping?
-          // If minStart is used, we treat it as the "Beginning of History" for the chart.
-          // So Init Q = 0 is correct relative to the Chart View.
-          // But Profitability? Profitability is relative to the Investment made IN THAT PERIOD?
-          // No, usually Profitability is Total.
-          // For simplicity and consistency with previous logic, if we clip via minStart, we reset stats.
+        const allInv = inversiones.filter(inv => inv.ticker_id === id && inv.fecha < from)
+        let qty = 0
+        let cpp = 0
 
-          if (!shouldStartFromZero) {
-            // Standard range logic (1m, 1y, etc) - NEED initial state
-            // Fetch prior investments from DB (since not in 'inversiones' array if filtered? No, line 200 fetches ALL).
-            // Ah, line 200 fetches ALL. Line 198 fetches filtered. 
-            // Logic check:
-            // If range != 'all', line 200 executes. `inversiones` has ALL.
-            // We can proceed to calc init from `inversiones`.
+        allInv.forEach(inv => {
+          const amt = Number(inv.importe)
+          const q = Number(inv.cantidad)
 
-            // What if we fetched ALL `inversiones` but `from` is later?
-            // Then we filter `inversiones` array.
-
-            const priorInv = db.prepare('SELECT importe, cantidad, origen_capital, tipo_operacion FROM inversiones WHERE ticker_id = ? AND fecha < ?').all(id, from)
-            let initQ = 0, initNetInv = 0
-            priorInv.forEach(pi => {
-              const amt = Number(pi.importe)
-              const q = Number(pi.cantidad)
-              if (pi.tipo_operacion === 'DESINVERSION') {
-                initQ -= q
-                initNetInv -= amt
-              } else {
-                initQ += q
-                if (pi.origen_capital !== 'REINVERSION') initNetInv += amt
-              }
-            })
-
-            const lp = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id=? AND fecha < ? ORDER BY fecha DESC LIMIT 1').get(id, from)
-            const lastPrice = Number(lp?.precio || 0)
-            stats[id] = { q: initQ, lv: initQ * lastPrice, lp: lastPrice, netInvAcum: initNetInv }
+          if (inv.tipo_operacion === 'DESINVERSION') {
+            qty -= q
+            if (qty < 0.01) { qty = 0; cpp = 0; }
           } else {
-            stats[id] = { q: 0, lv: 0, lp: 0, netInvAcum: 0 }
+            const prevCost = qty * cpp
+            qty += q
+            if (qty > 0) {
+              cpp = (prevCost + amt) / qty
+            }
           }
-        }
+        })
+
+        const lp = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id=? AND fecha < ? ORDER BY fecha DESC LIMIT 1').get(id, from)
+        stats[id] = { q: qty, cpp: cpp, lp: Number(lp?.precio || 0) }
       })
 
-      const items = [];
-
-      // Re-implementing loop for clarity
-      let accumulatedDividends = 0
-
-      // Reset curr to start
-      curr = new Date(from + 'T00:00:00Z')
+      const items = []
+      let curr = new Date(from + 'T00:00:00Z')
 
       while (true) {
-        const dStr = curr.toISOString().slice(0, 10); if (dStr > hoy) break
+        const dStr = curr.toISOString().slice(0, 10)
+        if (dStr > hoy) break
 
-        let dailyVal = 0
-        let dailyNetInv = 0
-
-        const dayDivs = dividendos.filter(d => d.fecha.startsWith(dStr)).reduce((sum, d) => sum + Number(d.monto), 0)
-        accumulatedDividends += dayDivs
+        let dailyInversion = 0
+        let dailyValor = 0
 
         tickerIds.forEach(id => {
           const s = stats[id]
-          const inv = invMap[id]?.[dStr]
+          const dayOps = invMap[id]?.[dStr]?.ops || []
 
-          if (inv) {
-            s.q += inv.q
-            s.netInvAcum += inv.netInv
-          }
+          dayOps.forEach(op => {
+            if (op.tipo === 'DESINVERSION') {
+              s.q -= op.qty
+              if (s.q < 0.01) { s.q = 0; s.cpp = 0; }
+            } else {
+              const prevCost = s.q * s.cpp
+              s.q += op.qty
+              if (s.q > 0) {
+                s.cpp = (prevCost + op.amount) / s.q
+              }
+            }
+          })
 
           const p = preMap[id]?.[dStr] || s.lp
           s.lp = p
 
-          dailyVal += (s.q * p)
-          dailyNetInv += s.netInvAcum
+          dailyInversion += (s.q * s.cpp)
+          dailyValor += (s.q * p)
         })
 
-        const profit = (dailyVal + accumulatedDividends) - dailyNetInv
+        // Rendimiento = (Valor - Inversión) + Realized Gains TOTAL + Dividends TOTAL
+        // This matches Empresas exactly: unrealizedGain + realizedGain + dividends
+        const unrealizedGain = dailyValor - dailyInversion
+        const rendimiento = unrealizedGain + totalRealizedGains + totalDividends
 
         items.push({
           fecha: dStr,
-          inversionUsd: Number(dailyNetInv.toFixed(2)),
-          valorActualUsd: Number(dailyVal.toFixed(2)),
-          rendimientoAcumulado: Number(profit.toFixed(2))
+          inversionUsd: Number(dailyInversion.toFixed(2)),
+          valorActualUsd: Number(dailyValor.toFixed(2)),
+          rendimientoAcumulado: Number(rendimiento.toFixed(2))
         })
 
         curr.setUTCDate(curr.getUTCDate() + 1)
@@ -469,7 +455,7 @@ export function dashboardRouter(db) {
       // Assuming 'tipo_operacion' column exists (INVERSION, DESINVERSION, REINVERSION, etc)
       // If not, we might need to rely on negative amounts? Standard is usually positive amounts with type.
       // Let's assume standard 'INVERSION', 'DESINVERSION'.
-      const inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad, tipo_operacion FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
+      const inversiones = db.prepare(`SELECT ticker_id, fecha, importe, cantidad, tipo_operacion, origen_capital FROM inversiones WHERE ticker_id IN (${tickerIds.join(',')}) ORDER BY fecha ASC`).all()
       const precios = db.prepare(`SELECT ticker_id, fecha, precio FROM precios_historicos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
       const dividendos = db.prepare(`SELECT ticker_id, fecha, monto FROM dividendos WHERE ticker_id IN (${tickerIds.join(',')}) AND fecha >= ? ORDER BY fecha ASC`).all(start)
 
@@ -478,7 +464,12 @@ export function dashboardRouter(db) {
       const invMap = {};
       inversiones.forEach(i => {
         if (!invMap[i.ticker_id]) invMap[i.ticker_id] = {};
-        if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = { netImp: 0, netQ: 0, inflows: 0, outflows: 0 };
+        if (!invMap[i.ticker_id][i.fecha]) invMap[i.ticker_id][i.fecha] = {
+          netImp: 0, netQ: 0,
+          externalInflows: 0,  // Aportes frescos + dividendos reinvertidos
+          reinvestInflows: 0,  // Reinversiones de capital (neutras)
+          outflows: 0
+        };
 
         let signedImp = Number(i.importe);
         // Desinversion: Cash OUT. Typically recorded as positive amount in DB? Or negative?
@@ -497,19 +488,25 @@ export function dashboardRouter(db) {
         //   So we just sum them up. Desinversion is negative Flow, Inversion is positive Flow.
 
         const type = (i.tipo_operacion || 'INVERSION').toUpperCase();
+        const origen = (i.origen_capital || 'FRESH_CASH').toUpperCase();
 
         if (type === 'DESINVERSION' || type === 'VENTA') {
-          // It's a withdrawal of capital from that Asset.
-          // Flow is negative.
-          // Amount in DB usually positive for the transaction size.
-          invMap[i.ticker_id][i.fecha].outflows += signedImp; // Track positive magnitude
+          // Retiro de capital
+          invMap[i.ticker_id][i.fecha].outflows += signedImp;
           invMap[i.ticker_id][i.fecha].netImp -= signedImp;
-          invMap[i.ticker_id][i.fecha].netQ -= Number(i.cantidad); // Decrease qty
+          invMap[i.ticker_id][i.fecha].netQ -= Number(i.cantidad);
         } else {
           // COMPRA / INVERSION
-          invMap[i.ticker_id][i.fecha].inflows += signedImp;
+          if (origen === 'REINVERSION') {
+            // Reinversión de capital: NEUTRA en aportes externos
+            invMap[i.ticker_id][i.fecha].reinvestInflows += signedImp;
+          } else {
+            // FRESH_CASH o DIVIDENDO: Cuenta como aporte externo
+            // (Dividendos reinvertidos son ganancia realizada, SÍ suman)
+            invMap[i.ticker_id][i.fecha].externalInflows += signedImp;
+          }
           invMap[i.ticker_id][i.fecha].netImp += signedImp;
-          invMap[i.ticker_id][i.fecha].netQ += Number(i.cantidad); // Increase qty
+          invMap[i.ticker_id][i.fecha].netQ += Number(i.cantidad);
         }
       })
 
@@ -544,7 +541,7 @@ export function dashboardRouter(db) {
 
         tickerIds.forEach(id => {
           const s = stats[id];
-          const inv = invMap[id]?.[dStr] || { netImp: 0, netQ: 0, inflows: 0, outflows: 0 };
+          const inv = invMap[id]?.[dStr] || { netImp: 0, netQ: 0, externalInflows: 0, reinvestInflows: 0, outflows: 0 };
           const div = divMap[id]?.[dStr] || 0 // This is div in LC
           const moneda = tickerCurrency[id]
           const fxToUse = moneda === 'PEN' ? currentFx : 1
@@ -588,7 +585,7 @@ export function dashboardRouter(db) {
           OrganicRmT += Rm_Organic_USD
           DividendsT += Div_USD // Accumulate dividends in USD
 
-          InflowsT += (inv.inflows / fxToUse)
+          InflowsT += (inv.externalInflows / fxToUse)  // Solo aportes externos (no reinversiones)
           OutflowsT += (inv.outflows / fxToUse)
 
           // Update State
@@ -765,124 +762,9 @@ export function dashboardRouter(db) {
 
   // 9. /twr-monthly (Legacy but refined)
   r.get('/twr-monthly', async (req, res) => {
-    // This is essentially evolution-monthly in USD but with benchmarks and SP500 comparison
-    // We already have evolution-annual and evolution-monthly. 
-    // I'll keep it for compatibility but simplified.
+    // Legacy endpoint stub
     res.json({ items: [], yearEndSummary: [] })
   })
 
   return r
-}
-
-async function getPriceNearDate(fetch, t, d, dir) {
-  const e = await fetch(t, d, d); if (e?.items?.length > 0) return e.items[0].precio
-  const dt = new Date(d); let s, fl; if (dir === 'before') { fl = d; dt.setDate(dt.getDate() - 15); s = dt.toISOString().slice(0, 10); }
-  else { s = d; dt.setDate(dt.getDate() + 15); fl = dt.toISOString().slice(0, 10); }
-  const r = await fetch(t, s, fl); if (r?.items?.length > 0) return dir === 'before' ? r.items[r.items.length - 1].precio : r.items[0].precio
-  return null
-}
-
-/**
- * Get cached benchmark return or fetch and cache if not exists
- * @param {Database} db - SQLite database instance
- * @param {Function} fetchDailyHistory - Function to fetch price history
- * @param {string} ticker - Benchmark ticker (e.g., 'SPY', 'EPU')
- * @param {number} year - Year for the benchmark
- * @param {string} startDate - Start date in YYYY-MM-DD format
- * @param {string} endDate - End date in YYYY-MM-DD format
- * @returns {Promise<number|null>} - Return percentage or null if not available
- */
-async function getCachedBenchmark(db, fetchDailyHistory, ticker, year, startDate, endDate) {
-  try {
-    // Check cache first (with 24h TTL)
-    const cached = db.prepare(`
-      SELECT return_pct, cached_at 
-      FROM benchmark_cache 
-      WHERE ticker = ? AND year = ?
-    `).get(ticker, year)
-
-    if (cached) {
-      const cachedAt = new Date(cached.cached_at)
-      const now = new Date()
-      const ageHours = (now - cachedAt) / (1000 * 60 * 60)
-
-      // If cache is less than 24h old, return cached value
-      if (ageHours < 24) {
-        return cached.return_pct
-      }
-    }
-
-    // Cache miss or expired - fetch from API
-    const pI = await getPriceNearDate(fetchDailyHistory, ticker, startDate, 'after')
-    const pF = await getPriceNearDate(fetchDailyHistory, ticker, endDate, 'before')
-
-    if (!pI || !pF) return null
-
-    const returnPct = Number((((pF / pI) - 1) * 100).toFixed(2))
-
-    // Upsert cache
-    db.prepare(`
-      INSERT INTO benchmark_cache (ticker, year, start_date, end_date, return_pct, cached_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT(ticker, year) DO UPDATE SET
-        start_date = excluded.start_date,
-        end_date = excluded.end_date,
-        return_pct = excluded.return_pct,
-        cached_at = excluded.cached_at
-    `).run(ticker, year, startDate, endDate, returnPct)
-
-    return returnPct
-
-  } catch (error) {
-    console.error(`Error fetching benchmark ${ticker} for year ${year}:`, error)
-    return null
-  }
-}
-
-/**
- * Get all benchmarks for a year using cache
- * @param {Database} db - SQLite database instance
- * @param {Function} fetchDailyHistory - Function to fetch price history
- * @param {number} year - Year for benchmarks
- * @param {string} startDate - Start date in YYYY-MM-DD format
- * @param {string} endDate - End date in YYYY-MM-DD format
- * @returns {Promise<Object>} - Object with benchmark keys and return percentages
- */
-async function getBenchmarksForYear(db, fetchDailyHistory, year, startDate, endDate) {
-  const benchmarks = {}
-  const bms = [
-    { k: 'sp500', t: 'SPY' },
-    { k: 'sp_bvl_gen', t: 'EPU' }
-  ]
-
-  // Fetch all benchmarks in parallel
-  const results = await Promise.all(
-    bms.map(async (b) => {
-      const returnPct = await getCachedBenchmark(db, fetchDailyHistory, b.t, year, startDate, endDate)
-      return { key: b.k, value: returnPct }
-    })
-  )
-
-  // Build result object
-  results.forEach(r => {
-    if (r.value !== null) {
-      benchmarks[r.key] = r.value
-    }
-  })
-
-  return benchmarks
-}
-
-
-function calculateBalanceAtDate(db, ids, d, fx) {
-  let tot = 0
-  ids.forEach(id => {
-    const q = db.prepare('SELECT SUM(cantidad) as q FROM inversiones WHERE ticker_id=? AND fecha <= ?').get(id, d).q || 0
-    if (q > 0) {
-      const p = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id=? AND fecha <= ? ORDER BY fecha DESC LIMIT 1').get(id, d)?.precio || 0
-      const m = db.prepare('SELECT moneda FROM tickers WHERE id=?').get(id).moneda
-      tot += (m === 'USD' ? q * p : (q * p) / fx)
-    }
-  })
-  return tot
 }

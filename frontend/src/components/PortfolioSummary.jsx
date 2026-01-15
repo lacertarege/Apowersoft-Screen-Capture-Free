@@ -5,9 +5,9 @@ export function PortfolioSummary({ investments, currency }) {
   const stats = React.useMemo(() => {
     const invertido = investments.reduce((a, x) => a + (Number(x.importe_total) || 0), 0)
     const valorActual = investments.reduce((a, x) => a + (Number(x.balance) || 0), 0)
-    const capitalGain = investments.reduce((a, x) => a + (Number(x.rendimiento) || 0), 0)
-    const dividends = investments.reduce((a, x) => a + (Number(x.total_dividends || 0)), 0)
-    const rendimiento = capitalGain + dividends
+    // Backend 'rendimiento' already includes: unrealizedGain + realizedGain + dividends
+    // Do NOT add dividends again!
+    const rendimiento = investments.reduce((a, x) => a + (Number(x.rendimiento) || 0), 0)
     const rentab = invertido ? (rendimiento / invertido) : 0
 
     return { invertido, valorActual, rendimiento, rentab }
