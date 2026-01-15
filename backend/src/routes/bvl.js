@@ -1,4 +1,5 @@
 import express from 'express'
+import logger from '../utils/logger.js'
 
 export function bvlRouter(db) {
     const r = express.Router()
@@ -37,7 +38,7 @@ export function bvlRouter(db) {
 
             res.json({ results: formatted })
         } catch (error) {
-            console.error('Error en /bvl/search:', error)
+            logger.error('BVL search error', { error: error.message })
             res.status(500).json({ error: error.message })
         }
     })
@@ -70,7 +71,7 @@ export function bvlRouter(db) {
                 indices: JSON.parse(company.indices || '[]')
             })
         } catch (error) {
-            console.error('Error en /bvl/company:', error)
+            logger.error('BVL company lookup error', { error: error.message })
             res.status(500).json({ error: error.message })
         }
     })
@@ -132,7 +133,7 @@ export function bvlRouter(db) {
                 events: formatted
             })
         } catch (error) {
-            console.error('Error en /bvl/corporate-actions:', error)
+            logger.error('BVL corporate actions error', { error: error.message })
             res.status(500).json({ error: error.message })
         }
     })
@@ -154,12 +155,12 @@ export function bvlRouter(db) {
       `).all(rpjCode)
 
             if (cached && cached.length > 0) {
-                console.log(`✅ Dividendos de ${rpjCode} desde caché (${cached.length})`)
+                logger.debug('BVL benefits from cache', { rpjCode, count: cached.length })
                 return res.json({ benefits: cached, cached: true })
             }
 
             // 2. Si no está en caché, consultar BVL API
-            console.log(`🔍 Consultando dividendos de ${rpjCode} en BVL API...`)
+            logger.debug('Fetching BVL benefits from API', { rpjCode })
             const { request } = await import('undici')
             const response = await request(`https://dataondemand.bvl.com.pe/v1/issuers/${rpjCode}/value`, {
                 method: 'GET',
@@ -214,12 +215,12 @@ export function bvlRouter(db) {
                 })
 
                 transaction(data.fixedValues)
-                console.log(`💾 Guardados ${benefits.length} dividendos de ${rpjCode} en caché`)
+                logger.info('BVL benefits cached', { rpjCode, count: benefits.length })
             }
 
             res.json({ benefits, cached: false })
         } catch (error) {
-            console.error('Error en /bvl/benefits:', error)
+            logger.error('BVL benefits error', { rpjCode: req.params.rpjCode, error: error.message })
             res.status(500).json({ error: error.message })
         }
     })

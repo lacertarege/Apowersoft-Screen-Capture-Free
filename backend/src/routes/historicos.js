@@ -1,6 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import { backfillHistoricalPrices } from '../jobs/backfillHistoricalPrices.js'
+import logger from '../utils/logger.js'
 
 // Configurar multer para manejar archivos CSV
 const upload = multer({
@@ -28,10 +29,10 @@ export function historicosRouter(db) {
 
   r.post('/backfill', async (req, res) => {
     try {
-      ; (async () => { try { await backfillHistoricalPrices(db) } catch (e) { console.error('backfill historicos API error', e) } })()
+      ; (async () => { try { await backfillHistoricalPrices(db) } catch (e) { logger.error('backfill historicos API error', { error: e.message }) } })()
       res.json({ started: true })
     } catch (e) {
-      console.error('POST /historicos/backfill error', e)
+      logger.error('POST /historicos/backfill error', { error: e.message })
       res.status(500).json({ error: 'No se pudo iniciar el backfill' })
     }
   })
@@ -45,7 +46,7 @@ export function historicosRouter(db) {
       }
       res.json({ ok: true, deleted: result.changes })
     } catch (e) {
-      console.error('DELETE /historicos/:id error', e)
+      logger.error('DELETE /historicos/:id error', { error: e.message })
       res.status(500).json({ error: e.message })
     }
   })
@@ -149,7 +150,7 @@ export function historicosRouter(db) {
           }
         }
 
-        console.log(`No se pudo convertir la fecha: "${cleanDate}"`)
+        logger.debug('Date conversion failed', { cleanDate })
         return null
       }
 
@@ -164,9 +165,11 @@ export function historicosRouter(db) {
       `)
 
       // Procesar cada línea
-      console.log(`Procesando ${lines.length - 1} líneas de datos...`)
-      console.log(`Headers: ${headers.join(', ')}`)
-      console.log(`Mapeo: fecha=${fechaIndex} (${headers[fechaIndex]}), precio=${precioIndex} (${headers[precioIndex]})`)
+      logger.debug('CSV processing started', {
+        lines: lines.length - 1,
+        headers: headers.join(', '),
+        mapping: { fecha: fechaIndex, precio: precioIndex }
+      })
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim()
@@ -174,7 +177,7 @@ export function historicosRouter(db) {
 
         const columns = line.split(separator).map(cell => cell.trim().replace(/"/g, ''))
         if (columns.length < Math.max(fechaIndex, precioIndex) + 1) {
-          console.log(`Línea ${i + 1}: No hay suficientes columnas (${columns.length})`)
+          logger.debug('CSV line has insufficient columns', { line: i + 1, columns: columns.length })
           continue
         }
 
@@ -182,7 +185,7 @@ export function historicosRouter(db) {
         const precioStr = columns[precioIndex]
 
         if (!fechaStr || !precioStr) {
-          console.log(`Línea ${i + 1}: Fecha o precio vacío - fecha: "${fechaStr}", precio: "${precioStr}"`)
+          logger.debug('CSV line has empty date or price', { line: i + 1, fechaStr, precioStr })
           continue
         }
 
@@ -190,7 +193,7 @@ export function historicosRouter(db) {
         const precio = parseFloat(precioStr)
 
         if (!fecha || isNaN(precio) || precio <= 0) {
-          console.log(`Línea ${i + 1}: Datos inválidos - fecha: "${fechaStr}" -> "${fecha}", precio: "${precioStr}" -> ${precio}`)
+          logger.debug('CSV line has invalid data', { line: i + 1, fechaStr, fecha, precioStr, precio })
           errors.push(`Línea ${i + 1}: Fecha (${fechaStr}) o precio (${precioStr}) inválido`)
           continue
         }
@@ -209,7 +212,7 @@ export function historicosRouter(db) {
             inserted++
           }
         } catch (error) {
-          console.log(`Línea ${i + 1}: Error en base de datos: ${error.message}`)
+          logger.debug('CSV line DB error', { line: i + 1, error: error.message })
           errors.push(`Línea ${i + 1}: ${error.message}`)
         }
       }
@@ -224,7 +227,7 @@ export function historicosRouter(db) {
       })
 
     } catch (error) {
-      console.error('Error al importar CSV:', error)
+      logger.error('CSV import error', { error: error.message })
       res.status(500).json({ error: error.message })
     }
   })
