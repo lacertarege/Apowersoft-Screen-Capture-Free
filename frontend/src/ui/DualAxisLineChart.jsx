@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 
-export default function DualAxisLineChart({ data, currency = 'USD', width = null, height = 400, padding = 50, dividends = [] }) {
+export default function DualAxisLineChart({ data, currency = 'USD', width = null, height = 400, padding = 50 }) {
   const [hoverPoint, setHoverPoint] = useState(null)
   const containerRef = useRef(null)
   const [containerWidth, setContainerWidth] = useState(width || 800)
@@ -62,30 +62,36 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
   const inversionPoints = data.map((d, i) => ({ x: xFor(i), y: yForInversion(d.inversionUsd) }))
   const rendimientoPoints = data.map((d, i) => ({ x: xFor(i), y: yForRendimiento(d.rendimientoAcumulado || 0) }))
 
-  const createPath = (points) => {
+  // Create STEP path for investment (escalonada - horizontal then vertical)
+  const createStepPath = (points) => {
+    if (points.length < 2) return ''
+    let path = `M ${points[0].x} ${points[0].y}`
+    for (let i = 1; i < points.length; i++) {
+      // Horizontal line to new X, then vertical to new Y (step-after style)
+      path += ` H ${points[i].x} V ${points[i].y}`
+    }
+    return path
+  }
+
+  // Create smooth monotone path for returns (curva suave)
+  const createSmoothPath = (points) => {
     if (points.length < 2) return ''
     return points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
   }
 
-  // Calculate dividend points
-  const dividendPoints = dividends.map(div => {
-    // Find matching index in data
-    const idx = data.findIndex(d => d.fecha === div.date)
-    if (idx === -1) return null
-    return {
-      idx,
-      x: xFor(idx),
-      y: yForRendimiento(data[idx].rendimientoAcumulado || 0),
-      amount: div.amount
-    }
-  }).filter(p => p !== null)
+  // Create area path for gradient fill under returns line
+  const createAreaPath = (points) => {
+    if (points.length < 2) return ''
+    const linePath = createSmoothPath(points)
+    const bottomY = height - paddingBottom
+    return `${linePath} L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`
+  }
 
   const handleMouseMove = (e) => {
     const svg = e.currentTarget
     const rect = svg.getBoundingClientRect()
     const x = e.clientX - rect.left
 
-    // Find closest point
     let closestIdx = 0
     let minDist = Infinity
     for (let i = 0; i < n; i++) {
@@ -103,6 +109,9 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
     setHoverPoint(null)
   }
 
+  // Unique ID for gradients
+  const gradientId = `returnGradient-${currency}`
+
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <svg
@@ -113,67 +122,133 @@ export default function DualAxisLineChart({ data, currency = 'USD', width = null
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       >
+        {/* Definitions for gradients */}
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+
         <rect width={chartWidth} height={height} fill="white" />
+
+        {/* Grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const y = yForInversion(minInversion + ratio * inversionRange)
-          return <line key={`in-${ratio}`} x1={paddingLeft} y1={y} x2={chartWidth - paddingRight} y2={y} stroke="#f3f4f6" strokeWidth="1" strokeDasharray="2,2" />
+          return <line key={`in-${ratio}`} x1={paddingLeft} y1={y} x2={chartWidth - paddingRight} y2={y} stroke="#f3f4f6" strokeWidth="1" />
         })}
+
+        {/* Axes */}
         <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="1" />
         <line x1={chartWidth - paddingRight} y1={paddingTop} x2={chartWidth - paddingRight} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="1" />
         <line x1={paddingLeft} y1={height - paddingBottom} x2={chartWidth - paddingRight} y2={height - paddingBottom} stroke="#e5e7eb" strokeWidth="1" />
+
+        {/* Left axis labels (Inversión) */}
         {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const val = minInversion + ratio * inversionRange
-          return <text key={`l-${ratio}`} x={paddingLeft - 10} y={yForInversion(val) + 4} fontSize="11" fill="#4b5563" textAnchor="end">{formatValue(val)}</text>
+          return <text key={`l-${ratio}`} x={paddingLeft - 10} y={yForInversion(val) + 4} fontSize="10" fill="#374151" textAnchor="end">{formatValue(val)}</text>
         })}
+
+        {/* Right axis labels (Rendimiento) */}
         {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const val = minRendimiento + ratio * rendimientoRange
-          return <text key={`r-${ratio}`} x={chartWidth - paddingRight + 10} y={yForRendimiento(val) + 4} fontSize="11" fill="#4b5563" textAnchor="start">{formatValue(val)}</text>
+          return <text key={`r-${ratio}`} x={chartWidth - paddingRight + 10} y={yForRendimiento(val) + 4} fontSize="10" fill="#10b981" fontWeight="600" textAnchor="start">{formatValue(val)}</text>
         })}
+
+        {/* X axis date labels */}
         {data.map((d, i) => {
           if (i % Math.ceil(data.length / 8) === 0) {
             const dateObj = new Date(d.fecha)
             const label = `${String(dateObj.getUTCDate()).padStart(2, '0')}.${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}.${String(dateObj.getUTCFullYear()).slice(-2)}`
-            return <text key={i} x={xFor(i)} y={height - paddingBottom + 18} fontSize="10" fill="#6b7280" textAnchor="middle">{label}</text>
+            return <text key={i} x={xFor(i)} y={height - paddingBottom + 18} fontSize="9" fill="#6b7280" textAnchor="middle">{label}</text>
           }
           return null
         })}
 
-        {/* Lines with Updated Styles */}
-        <path d={createPath(inversionPoints)} fill="none" stroke="#000000" strokeWidth="1" strokeDasharray="3,3" />
-        <path d={createPath(rendimientoPoints)} fill="none" stroke="#10b981" strokeWidth="1" />
+        {/* Area fill under returns line (gradient) */}
+        <path d={createAreaPath(rendimientoPoints)} fill={`url(#${gradientId})`} />
 
-        {/* Dividend Markers */}
-        {dividendPoints.map((p, i) => (
-          <circle key={`div-${i}`} cx={p.x} cy={p.y} r={2} fill="#a855f7" stroke="white" strokeWidth={1} />
-        ))}
+        {/* Inversión Line: STEP (escalonada) + DASHED (punteada) - Black */}
+        <path
+          d={createStepPath(inversionPoints)}
+          fill="none"
+          stroke="#1e293b"
+          strokeWidth="1.2"
+          strokeDasharray="6,4"
+          strokeLinecap="round"
+        />
 
+        {/* Rendimiento Line: SMOOTH + SOLID (continua) - Green */}
+        <path
+          d={createSmoothPath(rendimientoPoints)}
+          fill="none"
+          stroke="#10b981"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Hover tooltip */}
         {hoverPoint !== null && (
           <g>
-            <rect x={Math.min(chartWidth - 190, Math.max(10, xFor(hoverPoint) - 90))} y={20} width={180} height={85} fill="rgba(0,0,0,0.85)" rx="6" />
-            <text x={Math.max(100, Math.min(chartWidth - 90, xFor(hoverPoint)))} y={38} fontSize="12" fill="white" textAnchor="middle" fontWeight="700">
+            {/* Vertical guide line */}
+            <line
+              x1={xFor(hoverPoint)}
+              y1={paddingTop}
+              x2={xFor(hoverPoint)}
+              y2={height - paddingBottom}
+              stroke="#6b7280"
+              strokeWidth="0.6"
+              strokeDasharray="4,4"
+              opacity="0.5"
+            />
+            {/* Tooltip box */}
+            <rect
+              x={Math.min(chartWidth - 180, Math.max(10, xFor(hoverPoint) - 85))}
+              y={20}
+              width={170}
+              height={70}
+              fill="rgba(15, 23, 42, 0.95)"
+              rx="8"
+            />
+            <text x={Math.max(95, Math.min(chartWidth - 85, xFor(hoverPoint)))} y={40} fontSize="12" fill="white" textAnchor="middle" fontWeight="700">
               {(() => {
                 const dateObj = new Date(data[hoverPoint].fecha)
                 return `${String(dateObj.getUTCDate()).padStart(2, '0')}.${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}.${String(dateObj.getUTCFullYear()).slice(-2)}`
               })()}
             </text>
-            <text x={Math.max(100, Math.min(chartWidth - 90, xFor(hoverPoint)))} y={56} fontSize="11" fill="white" textAnchor="middle">Inv: {formatFullValue(data[hoverPoint].inversionUsd)}</text>
-            <text x={Math.max(100, Math.min(chartWidth - 90, xFor(hoverPoint)))} y={71} fontSize="11" fill="white" textAnchor="middle">Val: {formatFullValue(data[hoverPoint].valorActualUsd)}</text>
-            <text x={Math.max(100, Math.min(chartWidth - 90, xFor(hoverPoint)))} y={86} fontSize="11" fill={data[hoverPoint].rendimientoAcumulado >= 0 ? "#4ade80" : "#fb7185"} textAnchor="middle" fontWeight="600">Rend: {formatFullValue(data[hoverPoint].rendimientoAcumulado || 0)}</text>
+            <text x={Math.max(95, Math.min(chartWidth - 85, xFor(hoverPoint)))} y={58} fontSize="10" fill="#94a3b8" textAnchor="middle">
+              Inversión: {formatFullValue(data[hoverPoint].inversionUsd)}
+            </text>
+            <text x={Math.max(95, Math.min(chartWidth - 85, xFor(hoverPoint)))} y={76} fontSize="11" fill={data[hoverPoint].rendimientoAcumulado >= 0 ? "#4ade80" : "#fb7185"} textAnchor="middle" fontWeight="600">
+              Retorno Total: {formatFullValue(data[hoverPoint].rendimientoAcumulado || 0)}
+            </text>
+            {/* Hover dots on lines */}
+            <circle cx={xFor(hoverPoint)} cy={inversionPoints[hoverPoint].y} r={2.4} fill="#1e293b" stroke="white" strokeWidth="1.2" />
+            <circle cx={xFor(hoverPoint)} cy={rendimientoPoints[hoverPoint].y} r={2.4} fill="#10b981" stroke="white" strokeWidth="1.2" />
           </g>
         )}
-        <text x={15} y={height / 2} fontSize="12" fill="#374151" fontWeight="700" transform={`rotate(-90, 15, ${height / 2})`} textAnchor="middle">Inversión ({currency})</text>
-        <text x={chartWidth - 15} y={height / 2} fontSize="12" fill="#374151" fontWeight="700" transform={`rotate(90, ${chartWidth - 15}, ${height / 2})`} textAnchor="middle">Rendimiento ({currency})</text>
+
+        {/* Y Axis Labels (rotated) */}
+        <text x={25} y={height / 2} fontSize="11" fill="#374151" fontWeight="700" transform={`rotate(-90, 25, ${height / 2})`} textAnchor="middle">Inversión ({currency})</text>
+        <text x={chartWidth - 25} y={height / 2} fontSize="11" fill="#10b981" fontWeight="700" transform={`rotate(90, ${chartWidth - 25}, ${height / 2})`} textAnchor="middle">Retorno Total ({currency})</text>
       </svg>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '16px', height: '1px', backgroundColor: '#000000', borderTop: '1px dashed #000000' }}></div><span>Inversión ({currency})</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '16px', height: '1px', backgroundColor: '#10b981' }}></div><span>Rendimiento ({currency})</span></div>
+
+      {/* Legend - Solo 2 series */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', marginTop: '12px', fontSize: '12px', color: '#374151' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <svg width="24" height="12">
+            <line x1="0" y1="6" x2="24" y2="6" stroke="#1e293b" strokeWidth="1.2" strokeDasharray="6,4" />
+          </svg>
+          <span style={{ fontWeight: 500 }}>Inversión</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <svg width="24" height="12">
+            <line x1="0" y1="6" x2="24" y2="6" stroke="#10b981" strokeWidth="1.5" />
+          </svg>
+          <span style={{ fontWeight: 500 }}>Retorno Total Combinado</span>
+        </div>
       </div>
     </div>
   )
 }
-
-
-
-
-
-

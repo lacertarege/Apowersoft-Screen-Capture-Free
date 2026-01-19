@@ -35,13 +35,6 @@ export default function TipoCambioView() {
   // Estado para sincronización SUNAT
   const [syncingSunat, setSyncingSunat] = useState(false)
 
-  // Estado para pegado manual de JSON SUNAT
-  const [jsonModal, setJsonModal] = useState({
-    open: false,
-    jsonText: '',
-    processing: false
-  })
-
   const load = async () => {
     setLoading(true)
     try {
@@ -185,95 +178,13 @@ export default function TipoCambioView() {
 
     } catch (error) {
       console.error('Error syncing with SUNAT:', error)
-
-      // Si falla, sugerir uso de JSON manual
-      const usarManual = confirm(
-        `❌ La API de SUNAT requiere autenticación desde navegador.\n\n` +
-        `¿Deseas pegar datos JSON manualmente?\n\n` +
-        `Puedes copiar el JSON desde:\n` +
-        `https://e-consulta.sunat.gob.pe/cl-at-ittipcam/tcS01Alias`
-      )
-
-      if (usarManual) {
-        setJsonModal({ open: true, jsonText: '', processing: false })
-      }
+      alert(`❌ Error al sincronizar con SUNAT:\n${error.message}`)
     } finally {
       setSyncingSunat(false)
     }
   }
 
-  // Función para procesar JSON pegado manualmente
-  const handleProcessJson = async () => {
-    if (!jsonModal.jsonText.trim()) {
-      alert('Por favor, pega el JSON de SUNAT')
-      return
-    }
 
-    setJsonModal({ ...jsonModal, processing: true })
-
-    try {
-      // Parsear JSON
-      const data = JSON.parse(jsonModal.jsonText)
-
-      if (!Array.isArray(data)) {
-        throw new Error('El JSON debe ser un array')
-      }
-
-      // Convertir formato SUNAT a formato del backend
-      const items = []
-      for (const item of data) {
-        if (item.codTipo !== 'V') continue // Solo tipo venta
-
-        const { fecPublica, valTipo } = item
-        if (!fecPublica || !valTipo) continue
-
-        // Convertir DD/MM/YYYY a YYYY-MM-DD
-        const [day, month, year] = fecPublica.split('/')
-        const fecha = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-        const usd_pen = parseFloat(valTipo)
-
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || isNaN(usd_pen)) continue
-
-        items.push({ fecha, usd_pen })
-      }
-
-      if (items.length === 0) {
-        alert('No se encontraron datos válidos en el JSON')
-        setJsonModal({ ...jsonModal, processing: false })
-        return
-      }
-
-      // Enviar al backend
-      const response = await fetch(`${API}/config/tipo-cambio/bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items, fuente_api: 'sunat-manual' })
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Error al guardar')
-      }
-
-      // Mostrar resultados
-      let mensaje = '✅ Importación JSON exitosa:\n\n'
-      mensaje += `📊 Total procesados: ${result.total}\n`
-      mensaje += `➕ Nuevos registros: ${result.inserted}\n`
-      mensaje += `🔄 Actualizados: ${result.updated}`
-
-      alert(mensaje)
-
-      // Cerrar modal y recargar
-      setJsonModal({ open: false, jsonText: '', processing: false })
-      await load()
-
-    } catch (error) {
-      console.error('Error processing JSON:', error)
-      alert(`❌ Error: ${error.message}\n\nVerifica que el JSON tenga el formato correcto de SUNAT.`)
-      setJsonModal({ ...jsonModal, processing: false })
-    }
-  }
 
   // Función para parsear una línea CSV respetando valores entre comillas
   const parseCSVLine = (line, delimiter) => {
@@ -603,22 +514,6 @@ export default function TipoCambioView() {
               title="Sincronizar tipos de cambio desde la API oficial de SUNAT"
             >
               {syncingSunat ? '⏳' : '🔄'} {syncingSunat ? 'Sincronizando...' : 'Actualizar desde SUNAT'}
-            </button>
-            <button
-              onClick={() => setJsonModal({ open: true, jsonText: '', processing: false })}
-              className="btn"
-              style={{
-                padding: '6px 12px',
-                fontSize: '13px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                backgroundColor: '#f3f4f6',
-                border: '1px solid #d1d5db'
-              }}
-              title="Pegar JSON de SUNAT manualmente"
-            >
-              📋 Pegar JSON
             </button>
           </div>
         </div>
@@ -1055,99 +950,7 @@ export default function TipoCambioView() {
         </div>
       )}
 
-      {/* Modal para Pegar JSON de SUNAT */}
-      {jsonModal.open && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '24px',
-            borderRadius: '8px',
-            width: '700px',
-            maxWidth: '90vw',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>Pegar JSON de SUNAT</h3>
 
-            <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#eff6ff', borderRadius: '4px', border: '1px solid #bfdbfe' }}>
-              <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 'bold' }}>📋 Instrucciones:</p>
-              <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', lineHeight: '1.6' }}>
-                <li>Abre <a href="https://e-consulta.sunat.gob.pe/cl-at-ittipcam/tcS01Alias" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb' }}>SUNAT Tipo de Cambio</a> en tu navegador</li>
-                <li>Abre las <strong>Herramientas de Desarrollador</strong> (F12)</li>
-                <li>Ve a la pestaña <strong>Network</strong> (Red)</li>
-                <li>Haz clic en "Consultar" en la página de SUNAT</li>
-                <li>Busca la petición <code style={{ backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '2px' }}>listarTipoCambio</code> en Network</li>
-                <li>Clic derecho → <strong>Copy → Copy Response</strong></li>
-                <li>Pega el JSON aquí abajo</li>
-              </ol>
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-                JSON de SUNAT:
-              </label>
-              <textarea
-                value={jsonModal.jsonText}
-                onChange={(e) => setJsonModal({ ...jsonModal, jsonText: e.target.value })}
-                placeholder='[{"fecPublica":"01/01/2026","valTipo":"3.368","codTipo":"V"}, ...]'
-                style={{
-                  width: '100%',
-                  minHeight: '200px',
-                  padding: '12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '4px',
-                  fontFamily: 'monospace',
-                  fontSize: '13px',
-                  resize: 'vertical'
-                }}
-                disabled={jsonModal.processing}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setJsonModal({ open: false, jsonText: '', processing: false })}
-                disabled={jsonModal.processing}
-                style={{
-                  padding: '8px 16px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '4px',
-                  backgroundColor: 'white',
-                  cursor: jsonModal.processing ? 'not-allowed' : 'pointer',
-                  opacity: jsonModal.processing ? 0.6 : 1
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleProcessJson}
-                disabled={jsonModal.processing || !jsonModal.jsonText.trim()}
-                style={{
-                  padding: '8px 16px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  backgroundColor: (!jsonModal.jsonText.trim() || jsonModal.processing) ? '#d1d5db' : '#2563eb',
-                  color: 'white',
-                  cursor: (!jsonModal.jsonText.trim() || jsonModal.processing) ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {jsonModal.processing ? '⏳ Procesando...' : '✅ Importar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

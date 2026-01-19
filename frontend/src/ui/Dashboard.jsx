@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { API } from './config'
 import BarChart from './BarChart.jsx'
 import DualAxisLineChart from './DualAxisLineChart.jsx'
-import InvestmentProfitabilityTable from './InvestmentProfitabilityTable.jsx'
-import TWRMonthlyTable from './TWRMonthlyTable.jsx'
+
+
 import AnnualSummaryTable from './AnnualSummaryTable.jsx'
 import AnnualBarChart from './AnnualBarChart.jsx'
 
@@ -50,18 +50,28 @@ export default function Dashboard() {
   const [investmentProfitabilityData, setInvestmentProfitabilityData] = useState([])
   const [dividendsDual, setDividendsDual] = useState([])
 
-  // Agregado por moneda (Tabla invert-rentab)
-  const [evolutionTableData, setEvolutionTableData] = useState([])
-  const [tableCurrency, setTableCurrency] = useState('USD')
 
-  // Evolución Mensual
-  const [monthlyEvolutionData, setMonthlyEvolutionData] = useState([])
-  const [monthlyCurrency, setMonthlyCurrency] = useState('USD')
-  const [monthlyLoading, setMonthlyLoading] = useState(true)
+
+
 
   // Resumen Anual
   const [annualEvolutionData, setAnnualEvolutionData] = useState([])
   const [annualLoading, setAnnualLoading] = useState(true)
+  const [annualRefreshing, setAnnualRefreshing] = useState(false)
+
+  // Función para refrescar datos anuales
+  const refreshAnnualData = async () => {
+    setAnnualRefreshing(true)
+    try {
+      const res = await fetch(`${API}/dashboard/evolution-annual`)
+      const data = await res.json()
+      setAnnualEvolutionData(data.items || [])
+    } catch (err) {
+      console.error('Error refreshing annual data:', err)
+    } finally {
+      setAnnualRefreshing(false)
+    }
+  }
 
   // Exchanges
   const [currencyExchange, setCurrencyExchange] = useState('USD')
@@ -107,18 +117,9 @@ export default function Dashboard() {
     fetch(`${API}/dashboard/info`).then(r => r.json()).then(d => setDashboardInfo(d)).catch(() => setDashboardInfo(null))
   }, [])
 
-  useEffect(() => {
-    fetch(`${API}/dashboard/evolution-by-currency?currency=${tableCurrency}`).then(r => r.json()).then(d => setEvolutionTableData(d.items || [])).catch(() => setEvolutionTableData([]))
-  }, [tableCurrency])
 
-  useEffect(() => {
-    setMonthlyLoading(true)
-    fetch(`${API}/dashboard/evolution-monthly?currency=${monthlyCurrency}`)
-      .then(r => r.ok ? r.json() : { items: [] })
-      .then(d => setMonthlyEvolutionData(d.items || []))
-      .catch(() => setMonthlyEvolutionData([]))
-      .finally(() => setMonthlyLoading(false))
-  }, [monthlyCurrency])
+
+
 
   useEffect(() => {
     setAnnualLoading(true)
@@ -242,7 +243,7 @@ export default function Dashboard() {
           {/* Invertido Legend */}
           <g transform={`translate(0, 0)`}>
             <line x1="0" y1="0" x2="20" y2="0" stroke="#000000" strokeWidth="1.25" strokeDasharray="4,4" />
-            <text x="25" y="4" fontSize="11" fill="#374151">Inversión Acumulada</text>
+            <text x="25" y="4" fontSize="11" fill="#374151">Inversión</text>
           </g>
           {/* Valor Legend */}
           <g transform={`translate(140, 0)`}>
@@ -308,7 +309,7 @@ export default function Dashboard() {
                   {series.map((s, idx) => (
                     <g key={`tooltip-${idx}`}>
                       <circle cx={finalX + 10} cy={finalY + 35 + idx * 22} r="1.5" fill={s.name === 'Invertido' ? '#000000' : s.color} />
-                      <text x={finalX + 20} y={finalY + 39 + idx * 22} fontSize="11" fill="#4b5563">{s.name === 'Invertido' ? 'Cap. Externo' : s.name}:</text>
+                      <text x={finalX + 20} y={finalY + 39 + idx * 22} fontSize="11" fill="#4b5563">{s.name === 'Invertido' ? 'Inversión' : s.name}:</text>
                       <text x={finalX + tooltipWidth - 10} y={finalY + 39 + idx * 22} textAnchor="end" fontSize="11" fill="#111827" fontWeight="700">{formatFullValue(s.points[hoverPoint].y)}</text>
                     </g>
                   ))}
@@ -345,7 +346,34 @@ export default function Dashboard() {
       {/* 1. Resumen Anual del Portafolio */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="flex-between" style={{ marginBottom: 12 }}>
-          <h3 className="card-title">Resumen Anual del Portafolio</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>Resumen Anual del Portafolio</h3>
+            <button
+              onClick={refreshAnnualData}
+              disabled={annualRefreshing}
+              title="Recalcular datos"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '600',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                background: annualRefreshing ? '#f1f5f9' : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                color: annualRefreshing ? '#94a3b8' : '#475569',
+                cursor: annualRefreshing ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s'
+              }}
+            >
+              <span style={{
+                display: 'inline-block',
+                animation: annualRefreshing ? 'spin 1s linear infinite' : 'none'
+              }}>🔄</span>
+              {annualRefreshing ? 'Actualizando...' : 'Actualizar'}
+            </button>
+          </div>
           <div className="text-muted">Consolidado en USD (Benchmarks de referencia)</div>
         </div>
         {annualLoading ? <div style={{ padding: '20px', textAlign: 'center' }}>Cargando resumen anual...</div> : <AnnualSummaryTable data={annualEvolutionData} />}
@@ -389,8 +417,8 @@ export default function Dashboard() {
           <div className="text-muted">Evolución temporal con doble eje</div>
         </div>
         <ChartControls range={rangeDual} setRange={setRangeDual} currency={currencyDual} setCurrency={setCurrencyDual} />
-        <DualAxisLineChart data={investmentProfitabilityData} dividends={dividendsDual} currency={currencyDual} width={null} />
-        <InvestmentProfitabilityTable data={evolutionTableData} currency={tableCurrency} onCurrencyChange={setTableCurrency} />
+        <DualAxisLineChart data={investmentProfitabilityData} currency={currencyDual} width={null} />
+
       </div>
 
       {/* 5. Inversiones por Plataforma */}
@@ -423,16 +451,7 @@ export default function Dashboard() {
         <BarChart data={typeData} currency={currencyType} />
       </div>
 
-      {/* 8. Evolución Mensual del Portafolio */}
-      <div className="card" style={{ marginTop: 12 }}>
-        <div className="flex-between">
-          <h3 className="card-title">Evolución Mensual del Portafolio</h3>
-          <div className="text-muted">Análisis detallado por mes</div>
-        </div>
-        {monthlyLoading ? <div style={{ padding: '40px', textAlign: 'center' }}><div style={{ display: 'inline-block', width: '40px', height: '40px', border: '4px solid #f3f4f6', borderTop: '4px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div><div style={{ marginTop: '16px', color: '#6b7280', fontSize: '14px' }}>Cargando datos...</div><style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style></div> :
-          <TWRMonthlyTable data={monthlyEvolutionData} currency={monthlyCurrency} onCurrencyChange={setMonthlyCurrency} />
-        }
-      </div>
+
     </div>
   )
 }

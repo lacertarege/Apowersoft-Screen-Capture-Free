@@ -15,6 +15,7 @@ export default function PreciosHistoricosView() {
   const [refreshModal, setRefreshModal] = useState({ open: false, loading: false, attempts: [], message: '', inserted: 0, source: null, title: '', steps: [], from: null, to: null })
   const [tipos, setTipos] = useState([])
   const [selectedTipos, setSelectedTipos] = useState([])
+  const [showHistory, setShowHistory] = useState(false)
 
   // Hook para manejo asíncrono de actualización de precios
   const { isUpdating, updateProgress, updatePrices } = usePriceUpdate()
@@ -70,12 +71,12 @@ export default function PreciosHistoricosView() {
 
   useEffect(() => {
     setLoading(true)
-    fetch(`${API}/tickers?pageSize=1000&q=${encodeURIComponent(q)}`)
+    fetch(`${API}/tickers?pageSize=1000&q=${encodeURIComponent(q)}&includeHistory=${showHistory}`)
       .then(r => r.json())
       .then(d => { setTickers(d.items || []) })
       .catch(() => setTickers([]))
       .finally(() => setLoading(false))
-  }, [q])
+  }, [q, showHistory])
 
   useEffect(() => {
     fetch(`${API}/config/tipos-inversion`).then(r => r.json()).then(d => {
@@ -502,13 +503,6 @@ export default function PreciosHistoricosView() {
       return
     }
 
-    console.log('Enviando importación CSV:', {
-      ticker: ticker.ticker,
-      tickerId: ticker.id,
-      columnMapping: columnMapping,
-      fileName: file.name
-    })
-
     setCsvImportModal(prev => ({ ...prev, loading: true }))
 
     try {
@@ -522,8 +516,6 @@ export default function PreciosHistoricosView() {
         body: formData
       })
 
-      console.log('Respuesta del servidor:', response.status, response.statusText)
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         console.error('Error del servidor:', errorData)
@@ -531,7 +523,6 @@ export default function PreciosHistoricosView() {
       }
 
       const data = await response.json()
-      console.log('Datos de respuesta:', data)
 
       // Recargar los históricos del ticker
       await loadHistoricos(ticker.id)
@@ -695,62 +686,74 @@ export default function PreciosHistoricosView() {
               Todas las Acciones y ETFs
             </h3>
 
-            <button
-              onClick={updateAllTickers}
-              disabled={bulkUpdateModal.isUpdating}
-              style={{
-                padding: '8px 16px',
-                fontSize: '14px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                backgroundColor: bulkUpdateModal.isUpdating ? '#94a3b8' : '#0ea5e9',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: bulkUpdateModal.isUpdating ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
-              }}
-              onMouseEnter={(e) => {
-                if (!bulkUpdateModal.isUpdating) {
-                  e.currentTarget.style.backgroundColor = '#0284c7'
-                  e.currentTarget.style.transform = 'translateY(-1px)'
-                  e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!bulkUpdateModal.isUpdating) {
-                  e.currentTarget.style.backgroundColor = '#0ea5e9'
-                  e.currentTarget.style.transform = 'translateY(0)'
-                  e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)'
-                }
-              }}
-            >
-              {bulkUpdateModal.isUpdating ? (
-                <>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ animation: 'spin 1s linear infinite' }}
-                  >
-                    <path d="M21 12a9 9 0 11-6.219-8.56" />
-                  </svg>
-                  Actualizando...
-                </>
-              ) : (
-                <>
-                  🔄 Actualizar Todo
-                </>
-              )}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', color: '#64748b' }}>
+                <input
+                  type="checkbox"
+                  checked={showHistory}
+                  onChange={(e) => setShowHistory(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>Mostrar Historial</span>
+              </label>
+
+              <button
+                onClick={updateAllTickers}
+                disabled={bulkUpdateModal.isUpdating}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: bulkUpdateModal.isUpdating ? '#94a3b8' : '#0ea5e9',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: bulkUpdateModal.isUpdating ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!bulkUpdateModal.isUpdating) {
+                    e.currentTarget.style.backgroundColor = '#0284c7'
+                    e.currentTarget.style.transform = 'translateY(-1px)'
+                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!bulkUpdateModal.isUpdating) {
+                    e.currentTarget.style.backgroundColor = '#0ea5e9'
+                    e.currentTarget.style.transform = 'translateY(0)'
+                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)'
+                  }
+                }}
+              >
+                {bulkUpdateModal.isUpdating ? (
+                  <>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ animation: 'spin 1s linear infinite' }}
+                    >
+                      <path d="M21 12a9 9 0 11-6.219-8.56" />
+                    </svg>
+                    Actualizando...
+                  </>
+                ) : (
+                  <>
+                    🔄 Actualizar Todo
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Segunda fila: Filtros tipo pill + Buscador */}

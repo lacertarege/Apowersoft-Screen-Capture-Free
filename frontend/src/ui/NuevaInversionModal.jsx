@@ -5,16 +5,34 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }) 
   const [importe, setImporte] = useState('')
   const [cantidad, setCantidad] = useState('')
   const [fecha, setFecha] = useState('')
-  const [plataforma, setPlataforma] = useState('Trii')
+  const [plataforma, setPlataforma] = useState('')
+  const [plataformas, setPlataformas] = useState([])
   const [esReinversion, setEsReinversion] = useState(false)
   const [precioHistorico, setPrecioHistorico] = useState(null)
   const [buscandoPrecio, setBuscandoPrecio] = useState(false)
   const [cantidadAutoCalculada, setCantidadAutoCalculada] = useState(false)
 
+  // Cargar plataformas activas desde la API
+  useEffect(() => {
+    if (open) {
+      fetch(`${API}/plataformas?activo=1`)
+        .then(r => r.json())
+        .then(data => {
+          const items = data.items || []
+          setPlataformas(items)
+          // Si hay plataformas y no hay una seleccionada, usar la primera
+          if (items.length > 0 && !plataforma) {
+            setPlataforma(items[0].nombre)
+          }
+        })
+        .catch(err => console.error('Error cargando plataformas:', err))
+    }
+  }, [open])
+
   useEffect(() => {
     if (open) {
       const hoy = new Date().toISOString().split('T')[0]
-      setFecha(hoy); setImporte(''); setCantidad(''); setPlataforma('Trii')
+      setFecha(hoy); setImporte(''); setCantidad('')
       setEsReinversion(false)
       setPrecioHistorico(null)
       setCantidadAutoCalculada(false)
@@ -266,11 +284,13 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }) 
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Plataforma</label>
               <select value={plataforma} onChange={e => setPlataforma(e.target.value)}>
-                <option value="Trii">Trii</option>
-                <option value="Tyba">Tyba</option>
-                <option value="Etoro">Etoro</option>
-                <option value="Pacifico seguros">Pacífico Seguros</option>
-                <option value="BBVA">BBVA</option>
+                {plataformas.length === 0 ? (
+                  <option value="">Cargando...</option>
+                ) : (
+                  plataformas.map(p => (
+                    <option key={p.id} value={p.nombre}>{p.nombre}</option>
+                  ))
+                )}
               </select>
             </div>
 

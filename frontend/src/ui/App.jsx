@@ -6,17 +6,18 @@ import TipoCambioView from './TipoCambioView.jsx'
 import PreciosHistoricosView from './PreciosHistoricosView.jsx'
 import { DividendosView } from './DividendosView.jsx'
 import TiposInversionView from './TiposInversionView.jsx'
+import PlataformasView from './PlataformasView.jsx'
 
-export default function App(){
+export default function App() {
   const [route, setRoute] = useState('empresas')
 
-  useEffect(()=>{
-    function onHash(){
-      setRoute((location.hash||'#empresas').replace('#',''))
+  useEffect(() => {
+    function onHash() {
+      setRoute((location.hash || '#empresas').replace('#', ''))
     }
     onHash()
     window.addEventListener('hashchange', onHash)
-    return ()=>window.removeEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
   return (
@@ -39,6 +40,9 @@ export default function App(){
       )}
       {route === 'tipos-inversion' && (
         <TiposInversionView />
+      )}
+      {route === 'plataformas' && (
+        <PlataformasView />
       )}
     </Layout>
   )

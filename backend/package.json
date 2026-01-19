@@ -1,6 +1,6 @@
 {
   "name": "investing-backend",
-  "version": "1.0.0",
+  "version": "2.4.0",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
@@ -10,7 +10,10 @@
     "seed": "node src/db/seed.js",
     "backup": "node src/db/backup.js",
     "import:bvn:last-month": "node src/jobs/importYahooBvnLastMonth.js",
-    "test": "node --test"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integrity": "vitest run tests/integrity.test.js",
+    "rebuild": "node src/db/migrations/rebuild_all_data.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
@@ -24,5 +27,8 @@
     "rate-limiter-flexible": "5.0.3",
     "undici": "6.19.8",
     "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.2.0"
   }
 }

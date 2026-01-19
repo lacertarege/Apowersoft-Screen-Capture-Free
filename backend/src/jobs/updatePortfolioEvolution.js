@@ -4,9 +4,16 @@
  */
 
 import { getLimaDate } from '../utils/date.js'
+import { CacheService } from '../services/CacheService.js'
 
 export async function updatePortfolioEvolutionJob(db, forceFull = false) {
   console.log('Iniciando actualización de evolución del portafolio...')
+
+  // Verificar si el cache es válido (no fue invalidado por cambios)
+  if (!forceFull && CacheService.isCacheValid(db)) {
+    console.log('Cache válido, omitiendo recálculo')
+    return { skipped: true, reason: 'cache_valid' }
+  }
 
   try {
     // Obtener fecha de primera inversión
@@ -87,15 +94,15 @@ export async function updatePortfolioEvolutionJob(db, forceFull = false) {
         GROUP BY fd.fecha, t.id, t.moneda
         HAVING cantidad_acumulada > 0
       )
-      SELECT 
+      SELECT \r
         pdf.fecha,
         SUM(CASE 
           WHEN pdf.moneda = 'USD' THEN pdf.inversion_acumulada
-          ELSE pdf.inversion_acumulada / COALESCE(tc.usd_pen, 3.5)
+          ELSE pdf.inversion_acumulada / tc.usd_pen
         END) as inversionUsd,
         SUM(CASE 
           WHEN pdf.moneda = 'USD' THEN pdf.cantidad_acumulada * COALESCE(pdf.precio, 0)
-          ELSE (pdf.cantidad_acumulada * COALESCE(pdf.precio, 0)) / COALESCE(tc.usd_pen, 3.5)
+          ELSE (pdf.cantidad_acumulada * COALESCE(pdf.precio, 0)) / tc.usd_pen
         END) as balanceUsd
       FROM portfolio_por_fecha pdf
       LEFT JOIN tipos_cambio tc ON tc.fecha = (
@@ -136,6 +143,10 @@ export async function updatePortfolioEvolutionJob(db, forceFull = false) {
     }
 
     console.log(`✓ Evolución del portafolio actualizada: ${insertados} nuevos, ${actualizados} actualizados`)
+
+    // Marcar cache como reconstruido
+    CacheService.markCacheRebuilt(db)
+
     return { insertados, actualizados, total: data.length }
   } catch (error) {
     console.error('Error actualizando evolución del portafolio:', error)
