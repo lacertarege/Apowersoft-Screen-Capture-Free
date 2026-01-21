@@ -24,6 +24,18 @@ export function inversionesRouter(db) {
   r.post('/', (req, res) => {
     const { ticker_id, fecha, importe, cantidad, plataforma, tipo_operacion = 'INVERSION', origen_capital = 'FRESH_CASH' } = req.body || {}
 
+    // Resolve IDs
+    let plataforma_id = null
+    let exchange_id = null
+
+    if (plataforma) {
+      const pObj = db.prepare('SELECT id, exchange_id FROM plataformas WHERE nombre = ?').get(plataforma)
+      if (pObj) {
+        plataforma_id = pObj.id
+        exchange_id = pObj.exchange_id
+      }
+    }
+
     // Validaciones básicas
     if (!ticker_id || !fecha || importe == null || cantidad == null) {
       return res.status(400).json({ error: 'ticker_id, fecha, importe y cantidad requeridos' })
@@ -102,7 +114,7 @@ export function inversionesRouter(db) {
         : null
 
       const stmt = db.prepare(
-        'INSERT INTO inversiones (ticker_id, fecha, importe, cantidad, apertura_guardada, plataforma, tipo_operacion, origen_capital, realized_return) VALUES (?,?,?,?,?,?,?,?,?)'
+        'INSERT INTO inversiones (ticker_id, fecha, importe, cantidad, apertura_guardada, plataforma, plataforma_id, exchange_id, tipo_operacion, origen_capital, realized_return) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
       )
       const info = stmt.run(
         ticker_id,
@@ -111,6 +123,8 @@ export function inversionesRouter(db) {
         nCant,
         apertura,
         plataforma || null,
+        plataforma_id,
+        exchange_id,
         tipo_operacion,
         tipo_operacion === 'INVERSION' ? origen_capital : null,
         realizedReturnValue
@@ -165,6 +179,20 @@ export function inversionesRouter(db) {
     if (plataforma !== undefined) {
       updates.push('plataforma = ?')
       params.push(plataforma)
+
+      // Update IDs too
+      const pObj = db.prepare('SELECT id, exchange_id FROM plataformas WHERE nombre = ?').get(plataforma)
+      if (pObj) {
+        updates.push('plataforma_id = ?')
+        params.push(pObj.id)
+        updates.push('exchange_id = ?')
+        params.push(pObj.exchange_id)
+      } else {
+        updates.push('plataforma_id = ?')
+        params.push(null)
+        updates.push('exchange_id = ?')
+        params.push(null)
+      }
     }
 
     if (updates.length === 0) {

@@ -16,6 +16,8 @@ export function dividendosRouter(db) {
           t.ticker,
           t.nombre,
           t.moneda,
+          t.moneda,
+          t.pais,
           ti.nombre as tipo_inversion
         FROM tickers t
         INNER JOIN inversiones i ON t.id = i.ticker_id
@@ -33,10 +35,12 @@ export function dividendosRouter(db) {
             d.fecha,
             d.monto,
             d.moneda,
-            d.mercado,
+            e.nombre as mercado,
+            d.mercado as mercado_legacy,
             strftime('%Y', d.fecha) as anio,
             tc.usd_pen as tipo_cambio
           FROM dividendos d
+          LEFT JOIN exchanges e ON d.exchange_id = e.id
           LEFT JOIN tipos_cambio tc ON d.fecha = tc.fecha
           WHERE d.ticker_id = ?
           ORDER BY d.fecha
@@ -50,18 +54,25 @@ export function dividendosRouter(db) {
 
         dividendosDetalle.forEach(d => {
           const anio = d.anio
-          const mercado = d.mercado || 'BVL' // Default a BVL si no hay mercado
-          
+          // Clasificar por origen según el país del ticker
+          let mercado = 'Empresas Extranjeras'
+          const paisNormalizado = (ticker.pais || '').toLowerCase()
+          if (paisNormalizado === 'perú' || paisNormalizado === 'peru' || paisNormalizado === 'pe') {
+            mercado = 'Empresas Peruanas'
+          }
+
           if (!dividendosPorAnio[anio]) {
             dividendosPorAnio[anio] = { USD: 0, PEN: 0 }
           }
 
-          // Inicializar estructura por año y mercado
+          // Inicializar estructura por año 
           if (!dividendosPorAnioMercado[anio]) {
-            dividendosPorAnioMercado[anio] = {
-              NYSE: { USD: 0, PEN: 0 },
-              BVL: { USD: 0, PEN: 0 }
-            }
+            dividendosPorAnioMercado[anio] = {}
+          }
+
+          // Inicializar mercado si no existe
+          if (!dividendosPorAnioMercado[anio][mercado]) {
+            dividendosPorAnioMercado[anio][mercado] = { USD: 0, PEN: 0 }
           }
 
           // Sumar USD original
@@ -69,7 +80,7 @@ export function dividendosRouter(db) {
             dividendosPorAnio[anio].USD += parseFloat(d.monto)
             totalPorMoneda.USD += parseFloat(d.monto)
             dividendosPorAnioMercado[anio][mercado].USD += parseFloat(d.monto)
-            
+
             // Convertir a PEN si hay tipo de cambio
             if (d.tipo_cambio) {
               const montoEnPen = parseFloat(d.monto) * parseFloat(d.tipo_cambio)
@@ -132,18 +143,21 @@ export function dividendosRouter(db) {
         return res.status(404).json({ error: 'Ticker no encontrado' })
       }
 
-      // Obtener todos los dividendos
+      // Obtener todos los dividendos con nombre de plataforma
       const dividendos = db.prepare(`
         SELECT 
-          id,
-          fecha,
-          monto,
-          moneda,
-          mercado,
-          created_at
-        FROM dividendos
-        WHERE ticker_id = ?
-        ORDER BY fecha DESC
+          d.id,
+          d.fecha,
+          d.monto,
+          d.moneda,
+          d.mercado,
+          d.plataforma_id,
+          p.nombre as plataforma,
+          d.created_at
+        FROM dividendos d
+        LEFT JOIN plataformas p ON d.plataforma_id = p.id
+        WHERE d.ticker_id = ?
+        ORDER BY d.fecha DESC
       `).all(ticker_id)
 
       // Calcular total
@@ -166,12 +180,12 @@ export function dividendosRouter(db) {
   // =========================================================================
   r.post('/', (req, res) => {
     try {
-      const { ticker_id, fecha, monto, moneda, mercado } = req.body
+      const { ticker_id, fecha, monto, moneda, mercado, plataforma_id } = req.body
 
       // Validaciones
       if (!ticker_id || !fecha || monto == null || !moneda) {
-        return res.status(400).json({ 
-          error: 'ticker_id, fecha, monto y moneda son requeridos' 
+        return res.status(400).json({
+          error: 'ticker_id, fecha, monto y moneda son requeridos'
         })
       }
 
@@ -185,26 +199,33 @@ export function dividendosRouter(db) {
         return res.status(404).json({ error: 'Ticker no encontrado' })
       }
 
+      // Resolve exchange_id
+      let exchange_id = null
+      if (mercado) {
+        const ex = db.prepare('SELECT id FROM exchanges WHERE nombre = ?').get(mercado)
+        if (ex) exchange_id = ex.id
+      }
+
       // Insertar dividendo
       const info = db.prepare(`
-        INSERT INTO dividendos (ticker_id, fecha, monto, moneda, mercado)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(ticker_id, fecha, parseFloat(monto), moneda, mercado || null)
+        INSERT INTO dividendos (ticker_id, fecha, monto, moneda, mercado, plataforma_id, exchange_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(ticker_id, fecha, parseFloat(monto), moneda, mercado || null, plataforma_id || null, exchange_id)
 
-      res.status(201).json({ 
-        ok: true, 
-        id: info.lastInsertRowid 
+      res.status(201).json({
+        ok: true,
+        id: info.lastInsertRowid
       })
     } catch (e) {
       console.error('POST /dividendos error', e)
-      
+
       // Manejar duplicados
       if (e.message.includes('UNIQUE constraint failed')) {
-        return res.status(409).json({ 
-          error: 'Ya existe un dividendo para este ticker en esta fecha' 
+        return res.status(409).json({
+          error: 'Ya existe un dividendo para este ticker en esta fecha'
         })
       }
-      
+
       res.status(500).json({ error: e.message })
     }
   })
@@ -216,7 +237,7 @@ export function dividendosRouter(db) {
   r.patch('/:id', (req, res) => {
     try {
       const { id } = req.params
-      const { fecha, monto, moneda, mercado } = req.body
+      const { fecha, monto, moneda, mercado, plataforma_id } = req.body
 
       // Verificar que el dividendo existe
       const dividendo = db.prepare('SELECT id FROM dividendos WHERE id = ?').get(id)
@@ -247,6 +268,15 @@ export function dividendosRouter(db) {
         updates.push('mercado = ?')
         params.push(mercado || null)
       }
+      if (plataforma_id !== undefined) {
+        updates.push('plataforma_id = ?')
+        params.push(plataforma_id || null)
+      }
+      if (mercado !== undefined) {
+        const ex = db.prepare('SELECT id FROM exchanges WHERE nombre = ?').get(mercado)
+        updates.push('exchange_id = ?')
+        params.push(ex ? ex.id : null)
+      }
 
       if (updates.length === 0) {
         return res.status(400).json({ error: 'No hay campos para actualizar' })
@@ -258,13 +288,13 @@ export function dividendosRouter(db) {
       res.json({ ok: true })
     } catch (e) {
       console.error('PATCH /dividendos/:id error', e)
-      
+
       if (e.message.includes('UNIQUE constraint failed')) {
-        return res.status(409).json({ 
-          error: 'Ya existe un dividendo para este ticker en esta fecha' 
+        return res.status(409).json({
+          error: 'Ya existe un dividendo para este ticker en esta fecha'
         })
       }
-      
+
       res.status(500).json({ error: e.message })
     }
   })

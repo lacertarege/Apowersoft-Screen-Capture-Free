@@ -1,21 +1,43 @@
 import React, { useEffect, useState } from 'react'
+import { API } from './config'
 
-export default function EditarInversionModal({ open, onClose, onSave, inversion, empresa }){
+export default function EditarInversionModal({ open, onClose, onSave, inversion, empresa }) {
   const [importe, setImporte] = useState('')
   const [cantidad, setCantidad] = useState('')
   const [fecha, setFecha] = useState('')
-  const [plataforma, setPlataforma] = useState('Trii')
+  const [plataforma, setPlataforma] = useState(inversion?.plataforma || 'Trii')
+  const [plataformas, setPlataformas] = useState([])
+  const [exchange, setExchange] = useState(inversion?.exchange || 'BVL')
+  const [exchanges, setExchanges] = useState([])
 
-  useEffect(()=>{
-    if (open && inversion){
+  useEffect(() => {
+    // Cargar plataformas
+    fetch(`${API}/plataformas?activo=1`)
+      .then(r => r.json())
+      .then(data => setPlataformas(data.items || []))
+      .catch(err => console.error('Error cargando plataformas:', err))
+
+    // Cargar exchanges
+    fetch(`${API}/exchanges?activo=1`)
+      .then(r => r.json())
+      .then(data => setExchanges(data.items || []))
+      .catch(err => console.error('Error cargando exchanges:', err))
+  }, [])
+
+  useEffect(() => {
+    if (open && inversion) {
       setFecha(inversion.fecha || '')
       setImporte(inversion.importe || '')
       setCantidad(inversion.cantidad || '')
       setPlataforma(inversion.plataforma || 'Trii')
+
+      // Si la inversión ya tiene exchange asociado, usarlo
+      // Si no, intentar derivarlo de la plataforma si existiera esa lógica, o usar default BVL
+      setExchange(inversion.exchange || 'BVL')
     }
   }, [open, inversion])
 
-  const apertura = React.useMemo(()=>{
+  const apertura = React.useMemo(() => {
     const imp = Number(importe); const cant = Number(cantidad)
     if (!imp || !cant) return null
     if (cant === 0) return null
@@ -23,7 +45,7 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
     return Number.isFinite(v) ? v : null
   }, [importe, cantidad])
 
-  function save(){
+  function save() {
     if (!importe || !cantidad || !fecha) return
     onSave({ fecha, importe: Number(importe), cantidad: Number(cantidad), plataforma })
   }
@@ -41,16 +63,16 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
             <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em' }}>
               Editar Inversión
             </h3>
-            <p style={{ 
-              margin: '4px 0 0 0', 
-              fontSize: '14px', 
+            <p style={{
+              margin: '4px 0 0 0',
+              fontSize: '14px',
               color: 'var(--fg-secondary)',
               fontWeight: 500
             }}>
               {empresa?.ticker} • {empresa?.nombre}
             </p>
           </div>
-          <button 
+          <button
             onClick={onClose}
             style={{
               background: 'none',
@@ -81,9 +103,9 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
             {/* Fecha */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Fecha de inversión</label>
-              <input 
-                value={fecha} 
-                onChange={e=>setFecha(e.target.value)} 
+              <input
+                value={fecha}
+                onChange={e => setFecha(e.target.value)}
                 type="date"
                 autoFocus
               />
@@ -93,22 +115,22 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Importe ({empresa?.moneda || 'USD'})</label>
-                <input 
-                  value={importe} 
-                  onChange={e=>setImporte(e.target.value)} 
-                  type="number" 
-                  min="0" 
+                <input
+                  value={importe}
+                  onChange={e => setImporte(e.target.value)}
+                  type="number"
+                  min="0"
                   step="0.01"
                   placeholder="0.00"
                 />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Cantidad</label>
-                <input 
-                  value={cantidad} 
-                  onChange={e=>setCantidad(e.target.value)} 
-                  type="number" 
-                  min="0" 
+                <input
+                  value={cantidad}
+                  onChange={e => setCantidad(e.target.value)}
+                  type="number"
+                  min="0"
                   step="0.0001"
                   placeholder="0.00"
                 />
@@ -123,16 +145,16 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
                 borderRadius: 'var(--radius)',
                 border: '1px solid var(--border-light)'
               }}>
-                <div style={{ 
-                  fontSize: '13px', 
+                <div style={{
+                  fontSize: '13px',
                   color: 'var(--fg-secondary)',
                   marginBottom: '4px',
                   fontWeight: 600
                 }}>
                   Precio de apertura
                 </div>
-                <div style={{ 
-                  fontSize: '20px', 
+                <div style={{
+                  fontSize: '20px',
                   fontWeight: 600,
                   color: 'var(--fg)',
                   fontVariantNumeric: 'tabular-nums'
@@ -148,12 +170,30 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
             {/* Plataforma */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Plataforma</label>
-              <select value={plataforma} onChange={e=>setPlataforma(e.target.value)}>
-                <option value="Trii">Trii</option>
-                <option value="Tyba">Tyba</option>
-                <option value="Etoro">Etoro</option>
-                <option value="Pacifico seguros">Pacífico Seguros</option>
-                <option value="BBVA">BBVA</option>
+              <select
+                value={plataforma}
+                onChange={e => setPlataforma(e.target.value)}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <option value="">-- Seleccione --</option>
+                {plataformas.map(p => (
+                  <option key={p.id} value={p.nombre}>{p.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Exchange */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Exchange</label>
+              <select
+                value={exchange}
+                onChange={e => setExchange(e.target.value)}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <option value="">-- Seleccione --</option>
+                {exchanges.map(e => (
+                  <option key={e.id} value={e.nombre}>{e.nombre}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -161,7 +201,7 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
 
         {/* Footer */}
         <div className="modal-footer">
-          <button 
+          <button
             onClick={onClose}
             style={{
               padding: '12px 24px',
@@ -170,9 +210,9 @@ export default function EditarInversionModal({ open, onClose, onSave, inversion,
           >
             Cancelar
           </button>
-          <button 
-            onClick={save} 
-            disabled={!canSave} 
+          <button
+            onClick={save}
+            disabled={!canSave}
             className="btn-primary"
             style={{
               padding: '12px 24px',

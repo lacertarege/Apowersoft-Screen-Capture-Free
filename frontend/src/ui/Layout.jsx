@@ -49,6 +49,7 @@ export default function Layout({ children }) {
                 <a href="#config/tipo-cambio">Tipo de cambio</a>
                 <a href="#config/precios-historicos">Precios históricos</a>
                 <a href="#tipos-inversion">Tipos de inversión</a>
+                <a href="#sectores">Sectores</a>
                 <a href="#plataformas">Plataformas</a>
               </div>
             </div>

@@ -163,10 +163,29 @@ export function dashboardRouter(db) {
   r.get('/by-platform', (req, res) => {
     const { currency = 'USD' } = req.query
     const data = db.prepare(`
-      SELECT i.plataforma, SUM(i.importe) as inversion_usd, SUM(i.cantidad * (SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1)) as valor_actual_usd
-      FROM inversiones i JOIN tickers t ON t.id = i.ticker_id
+      SELECT 
+        COALESCE(p.nombre, i.plataforma, 'Otros') as plataforma, 
+        SUM(
+          CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.importe
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -(i.importe - COALESCE(i.realized_return, 0))
+            ELSE 0 
+          END
+        ) as inversion_usd, 
+        SUM(
+          (CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.cantidad
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.cantidad
+            ELSE 0 
+          END) * COALESCE((SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1), 0)
+        ) as valor_actual_usd
+      FROM inversiones i 
+      JOIN tickers t ON t.id = i.ticker_id
+      LEFT JOIN plataformas p ON i.plataforma_id = p.id
       WHERE t.moneda = ?
-      GROUP BY i.plataforma ORDER BY inversion_usd DESC
+      GROUP BY COALESCE(p.nombre, i.plataforma, 'Otros')
+      HAVING inversion_usd > 1 OR valor_actual_usd > 1
+      ORDER BY inversion_usd DESC
     `).all(currency)
     res.json({ items: data })
   })
@@ -175,10 +194,29 @@ export function dashboardRouter(db) {
   r.get('/by-type', (req, res) => {
     const { currency = 'USD' } = req.query
     const data = db.prepare(`
-      SELECT ti.nombre as tipo_inversion, SUM(i.importe) as inversion_usd, SUM(i.cantidad * (SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1)) as valor_actual_usd
-      FROM inversiones i JOIN tickers t ON t.id = i.ticker_id JOIN tipos_inversion ti ON ti.id = t.tipo_inversion_id
+      SELECT 
+        ti.nombre as tipo_inversion, 
+        SUM(
+          CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.importe
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -(i.importe - COALESCE(i.realized_return, 0))
+            ELSE 0 
+          END
+        ) as inversion_usd, 
+        SUM(
+          (CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.cantidad
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.cantidad
+            ELSE 0 
+          END) * COALESCE((SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1), 0)
+        ) as valor_actual_usd
+      FROM inversiones i 
+      JOIN tickers t ON t.id = i.ticker_id 
+      JOIN tipos_inversion ti ON ti.id = t.tipo_inversion_id
       WHERE t.moneda = ?
-      GROUP BY ti.nombre ORDER BY inversion_usd DESC
+      GROUP BY ti.nombre 
+      HAVING inversion_usd > 1 OR valor_actual_usd > 1
+      ORDER BY inversion_usd DESC
     `).all(currency)
     res.json({ items: data })
   })
@@ -187,10 +225,63 @@ export function dashboardRouter(db) {
   r.get('/by-exchange', (req, res) => {
     const { currency = 'USD' } = req.query
     const data = db.prepare(`
-      SELECT t.exchange, SUM(i.importe) as inversion_usd, SUM(i.cantidad * (SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1)) as valor_actual_usd
-      FROM inversiones i JOIN tickers t ON t.id = i.ticker_id
-      WHERE t.moneda = ? AND t.exchange IS NOT NULL
-      GROUP BY t.exchange ORDER BY inversion_usd DESC
+      SELECT 
+        CASE 
+          WHEN LOWER(t.pais) IN ('peru', 'perú', 'pe') THEN 'Empresas Peruanas'
+          ELSE 'Empresas Extranjeras'
+        END as exchange, 
+        SUM(
+          CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.importe
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -(i.importe - COALESCE(i.realized_return, 0))
+            ELSE 0 
+          END
+        ) as inversion_usd, 
+        SUM(
+          (CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.cantidad
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.cantidad
+            ELSE 0 
+          END) * COALESCE((SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1), 0)
+        ) as valor_actual_usd
+      FROM inversiones i 
+      JOIN tickers t ON t.id = i.ticker_id
+      LEFT JOIN exchanges e ON i.exchange_id = e.id
+      WHERE t.moneda = ?
+      GROUP BY 1
+      HAVING inversion_usd > 1 OR valor_actual_usd > 1
+      ORDER BY inversion_usd DESC
+    `).all(currency)
+    res.json({ items: data })
+  })
+
+  // 4b. /by-sector
+  r.get('/by-sector', (req, res) => {
+    const { currency = 'USD' } = req.query
+    const data = db.prepare(`
+      SELECT 
+        COALESCE(s.nombre, 'Otros') as sector, 
+        SUM(
+          CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.importe
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -(i.importe - COALESCE(i.realized_return, 0))
+            ELSE 0 
+          END
+        ) as inversion_usd, 
+        SUM(
+          (CASE 
+            WHEN i.tipo_operacion = 'INVERSION' THEN i.cantidad
+            WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.cantidad
+            ELSE 0 
+          END) * COALESCE((SELECT precio FROM precios_historicos WHERE ticker_id = t.id ORDER BY fecha DESC LIMIT 1), 0)
+        ) as valor_actual_usd
+      FROM inversiones i 
+      JOIN tickers t ON t.id = i.ticker_id
+      LEFT JOIN sectores s ON t.sector_id = s.id
+      WHERE t.moneda = ?
+      GROUP BY 1
+      HAVING inversion_usd > 1 OR valor_actual_usd > 1
+      ORDER BY valor_actual_usd DESC
     `).all(currency)
     res.json({ items: data })
   })

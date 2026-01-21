@@ -48,18 +48,25 @@ export default function InvestmentChart({
     loadHistoricos()
   }, [ticker?.id])
 
-  // Procesar datos para el gráfico
-  const chartData = useMemo(() => {
+  // Procesar datos completos (sin filtrar)
+  const fullChartData = useMemo(() => {
     if (!inversiones.length || !historicos.length) return []
 
+    // Helper to parse dates without timezone issues (treats as local noon)
+    const parseDate = (dateStr) => {
+      if (!dateStr) return new Date(0)
+      const str = String(dateStr).slice(0, 10) // Get YYYY-MM-DD
+      return new Date(str + 'T12:00:00') // Parse as local noon to avoid day shift
+    }
+
     // Ordenar inversiones por fecha cronológica
-    const sortedInversiones = [...inversiones].sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+    const sortedInversiones = [...inversiones].sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha))
 
     // Encontrar la primera inversión
-    const primeraInversion = new Date(sortedInversiones[0].fecha)
+    const primeraInversion = parseDate(sortedInversiones[0].fecha)
 
     // Filtrar históricos desde la primera inversión
-    const historicosRelevantes = historicos.filter(h => new Date(h.fecha) >= primeraInversion)
+    const historicosRelevantes = historicos.filter(h => parseDate(h.fecha) >= primeraInversion)
 
     // --- HELPER PARA CALCULAR ESTADO EN UNA FECHA DETERMINADA ---
     // Implementa: Iterative CPP & Rule A (Reset on 0)
@@ -68,7 +75,7 @@ export default function InvestmentChart({
       let cpp = 0
 
       for (const inv of sortedInversiones) {
-        if (new Date(inv.fecha) > cutoffDate) break // Stop if transaction is in future
+        if (parseDate(inv.fecha) > cutoffDate) break // Stop if transaction is in future
 
         const esDesinversion = inv.tipo_operacion === 'DESINVERSION'
         const esDividendo = inv.tipo_operacion === 'DIVIDENDO'
@@ -103,7 +110,7 @@ export default function InvestmentChart({
 
     // 1. PUNTOS HISTÓRICOS (Diarios)
     historicosRelevantes.forEach(historico => {
-      const fechaHistorico = new Date(historico.fecha)
+      const fechaHistorico = parseDate(historico.fecha)
       const state = getPortfolioStateAt(fechaHistorico)
 
       const valor = historico.precio * state.qty
@@ -121,11 +128,11 @@ export default function InvestmentChart({
 
     // 2. MARCADORES DE OPERACIÓN (Exact Date)
     sortedInversiones.forEach(inv => {
-      const fechaInv = new Date(inv.fecha)
+      const fechaInv = parseDate(inv.fecha)
       // Find historical price closest to this op
       const historicoMasCercano = historicosRelevantes.reduce((closest, h) => {
-        const diffCurrent = Math.abs(new Date(h.fecha) - fechaInv)
-        const diffClosest = closest ? Math.abs(new Date(closest.fecha) - fechaInv) : Infinity
+        const diffCurrent = Math.abs(parseDate(h.fecha) - fechaInv)
+        const diffClosest = closest ? Math.abs(parseDate(closest.fecha) - fechaInv) : Infinity
         return diffCurrent < diffClosest ? h : closest
       }, null)
 
@@ -160,7 +167,7 @@ export default function InvestmentChart({
       const finalValor = posicionActual?.valorMercado || (ultimoHistorico.precio * finalQty)
 
       dataPoints.push({
-        fecha: new Date(ultimoHistorico.fecha), // Or new Date(), but aligning with history line is cleaner
+        fecha: parseDate(ultimoHistorico.fecha), // Parse with timezone safety
         importe: finalCapital,
         valor: finalValor,
         rendimiento: finalValor - finalCapital,
@@ -172,6 +179,35 @@ export default function InvestmentChart({
 
     return dataPoints.sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
   }, [inversiones, historicos, posicionActual])
+
+  // State para el rango de fechas
+  const [timeRange, setTimeRange] = useState('ALL')
+
+  // Filtrar datos según el rango seleccionado
+  const chartData = useMemo(() => {
+    if (!fullChartData.length) return []
+    if (timeRange === 'ALL') return fullChartData
+
+    const now = new Date()
+    // Normalizar "now" a medianoche para comparaciones consistentes si fuera necesario,
+    // pero para rangos simples basta con ajustar la fecha límite.
+    let startDate = new Date(now)
+
+    switch (timeRange) {
+      case '1W': startDate.setDate(now.getDate() - 7); break;
+      case '1M': startDate.setMonth(now.getMonth() - 1); break;
+      case '3M': startDate.setMonth(now.getMonth() - 3); break;
+      case '6M': startDate.setMonth(now.getMonth() - 6); break;
+      case '1Y': startDate.setFullYear(now.getFullYear() - 1); break;
+      case 'YTD':
+        startDate = new Date(now.getFullYear(), 0, 1)
+        break;
+      default: return fullChartData
+    }
+
+    // Filtrar
+    return fullChartData.filter(d => new Date(d.fecha) >= startDate)
+  }, [fullChartData, timeRange])
 
   // Configuración del gráfico
   const margin = { top: 20, right: 20, bottom: 60, left: 80 }
@@ -234,7 +270,8 @@ export default function InvestmentChart({
   }
 
   if (loadingHistoricos) return <div style={{ textAlign: 'center', padding: 40 }}>Cargando datos históricos...</div>
-  if (chartData.length === 0) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Datos insuficientes para el gráfico</div>
+  if (loadingHistoricos) return <div style={{ textAlign: 'center', padding: 40 }}>Cargando datos históricos...</div>
+  if (fullChartData.length === 0) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Datos insuficientes para el gráfico</div>
 
   return (
     <div style={{ margin: '20px 0' }}>
@@ -242,6 +279,30 @@ export default function InvestmentChart({
       <div style={{ display: 'flex', gap: '20px', marginTop: '16px' }}>
         <div style={{ flex: 2 }}>
           <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px' }}>
+            {/* Controles de Rango de Fecha */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', justifyContent: 'flex-end' }}>
+              {['1W', '1M', '3M', '6M', '1Y', 'YTD', 'ALL'].map(range => (
+                <button
+                  key={range}
+                  onClick={() => setTimeRange(range)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    borderRadius: '12px',
+                    border: timeRange === range ? '1px solid #3b82f6' : '1px solid #e2e8f0',
+                    backgroundColor: timeRange === range ? '#3b82f6' : 'white',
+                    color: timeRange === range ? 'white' : '#64748b',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    transition: 'all 0.2s',
+                    outline: 'none'
+                  }}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+
             <svg ref={svgRef} width={width} height={height} style={{ display: 'block', margin: '0 auto', cursor: 'crosshair' }} onMouseMove={handleMouseMove} onMouseLeave={() => setHoverPoint(null)}>
               {/* Background */}
               <rect x={margin.left} y={margin.top} width={chartWidth} height={chartHeight} fill="white" stroke="#e2e8f0" strokeWidth={1} />

@@ -6,6 +6,7 @@ import DualAxisLineChart from './DualAxisLineChart.jsx'
 
 import AnnualSummaryTable from './AnnualSummaryTable.jsx'
 import AnnualBarChart from './AnnualBarChart.jsx'
+import PieChart from './PieChart.jsx'
 
 const ChartControls = ({ range, setRange, currency, setCurrency, showRange = true }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -50,6 +51,9 @@ export default function Dashboard() {
   const [investmentProfitabilityData, setInvestmentProfitabilityData] = useState([])
   const [dividendsDual, setDividendsDual] = useState([])
 
+  // 6. Sectores (Pie)
+  const [currencySector, setCurrencySector] = useState('USD')
+  const [sectorData, setSectorData] = useState([])
 
 
 
@@ -98,6 +102,10 @@ export default function Dashboard() {
   useEffect(() => {
     fetch(`${API}/dashboard/by-type?currency=${currencyType}`).then(r => r.json()).then(d => setTypeData(d.items || []))
   }, [currencyType])
+
+  useEffect(() => { // Added useEffect for sector
+    fetch(`${API}/dashboard/by-sector?currency=${currencySector}`).then(r => r.json()).then(d => setSectorData(d.items || []))
+  }, [currencySector])
 
   useEffect(() => {
     fetch(`${API}/dashboard/investment-vs-profitability?range=${rangeDual}&currency=${currencyDual}`).then(r => r.json()).then(d => {
@@ -431,14 +439,33 @@ export default function Dashboard() {
         <BarChart data={platformData} currency={currencyPlatform} />
       </div>
 
-      {/* 6. Inversiones por Exchange */}
+
       <div className="card" style={{ marginTop: 12 }}>
         <div className="flex-between">
-          <h3 className="card-title">Inversiones por Exchange</h3>
+          <h3 className="card-title">Inversiones por Origen</h3>
           <div className="text-muted">Inversión vs Valor Actual</div>
         </div>
         <ChartControls showRange={false} currency={currencyExchange} setCurrency={setCurrencyExchange} />
         <BarChart data={exchangeData} currency={currencyExchange} />
+      </div>
+
+      {/* 7. Distribución por Origen (Pie Chart) - NEW */}
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="flex-between">
+          <h3 className="card-title">Distribución de Valor por Origen</h3>
+          <div className="text-muted">% del Valor Actual del Portafolio</div>
+        </div>
+        <PieChart data={exchangeData} valueKey="valor_actual_usd" labelKey="exchange" currency={currencyExchange} />
+      </div>
+
+      {/* 8. Distribución por Sector (Pie Chart) - NEW */}
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="flex-between">
+          <h3 className="card-title">Distribución por Sector</h3>
+          <div className="text-muted">% del Valor Actual por Sector</div>
+        </div>
+        <ChartControls showRange={false} currency={currencySector} setCurrency={setCurrencySector} />
+        <PieChart data={sectorData} valueKey="valor_actual_usd" labelKey="sector" currency={currencySector} />
       </div>
 
       {/* 7. Inversiones por Tipo */}

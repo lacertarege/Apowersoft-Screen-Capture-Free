@@ -33,6 +33,7 @@ export default function EmpresasView() {
 
   // Estados locales
   const [tipos, setTipos] = useState([])
+  const [sectores, setSectores] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [empresa, setEmpresa] = useState(null)
   const [investOpen, setInvestOpen] = useState(false)
@@ -54,27 +55,43 @@ export default function EmpresasView() {
   const [backendStatus, setBackendStatus] = useState({ connected: false, message: '' })
 
   useEffect(() => {
-    // Verificar conexión con el backend
+    // Cargar configuraciones estáticas (Sectores, Tipos) al iniciar
+    // No dependemos de checkBackendConnection para intentar cargar esto
+    console.log('Mounting EmpresasView: Fetching static config...')
+
+    // Fetch Sectores
+    fetch(`${API}/sectores`)
+      .then(r => r.json())
+      .then(d => {
+        console.log('✅ Sectores updated:', d.items?.length)
+        setSectores(d.items || [])
+      })
+      .catch(err => {
+        console.error('❌ Error fetching sectors:', err)
+        setSectores([])
+      })
+
+    // Fetch Tipos
+    fetch(`${API}/config/tipos-inversion`)
+      .then(r => r.json())
+      .then(d => setTipos(d.items || []))
+      .catch(() => setTipos([]))
+
+    // Fetch Presupuesto
+    fetch(`${API}/config/presupuesto`)
+      .then(r => r.json())
+      .then(d => setPresupuesto(d.item || null))
+      .catch(() => setPresupuesto(null))
+
+  }, []) // Run once on mount
+
+  useEffect(() => {
+    // Verificar conexión Principal y Cargar Tickers
     checkBackendConnection().then(status => {
       setBackendStatus(status)
       if (status.connected) {
         setErrorBackend(false)
-        // Cargar datos si la conexión es exitosa
         fetchTickers('', 1, 100, showClosed).catch(() => setErrorBackend(true))
-        fetch(`${API}/config/tipos-inversion`)
-          .then(r => r.json())
-          .then(d => setTipos(d.items || []))
-          .catch(() => {
-            setTipos([])
-            setErrorBackend(true)
-          })
-        fetch(`${API}/config/presupuesto`)
-          .then(r => r.json())
-          .then(d => setPresupuesto(d.item || null))
-          .catch(() => {
-            setPresupuesto(null)
-            setErrorBackend(true)
-          })
       } else {
         setErrorBackend(true)
       }
@@ -232,14 +249,18 @@ export default function EmpresasView() {
     const currentIndex = getCurrentTickerIndex()
 
     return (
-      <DetalleTicker
-        tickerId={detailId}
-        onBack={() => { fetchTickers(); setDetailId(null) }}
-        onChanged={fetchTickers}
-        tickersList={filteredTickers}
-        currentIndex={currentIndex}
-        onNavigateToTicker={handleNavigateToTicker}
-      />
+      <>
+        <DetalleTicker
+          tickerId={detailId}
+          onBack={() => { fetchTickers(); setDetailId(null) }}
+          onChanged={fetchTickers}
+          tickersList={filteredTickers}
+          currentIndex={currentIndex}
+          onNavigateToTicker={handleNavigateToTicker}
+          onEdit={onEditTickerOpen}
+        />
+        <EditTickerModal open={editOpen} onClose={() => { setEditOpen(false); setEditItem(null) }} onSave={onEditTickerSave} item={editItem} tipos={tipos} sectores={sectores} />
+      </>
     )
   }
   return (
@@ -315,7 +336,8 @@ export default function EmpresasView() {
       <TickerModal open={showNew} onClose={() => setShowNew(false)} onSave={onSaveTicker} tipos={tipos} defaultMoneda={activeTab} />
       <NuevaInversionModal open={investOpen} onClose={() => setInvestOpen(false)} onSave={onSaveInvest} empresa={empresa} />
       <NuevaDesinversionModal open={desinvestOpen} onClose={() => setDesinvestOpen(false)} onSave={onSaveDesinvest} empresa={empresa} />
-      <EditTickerModal open={editOpen} onClose={() => { setEditOpen(false); setEditItem(null) }} onSave={onEditTickerSave} item={editItem} tipos={tipos} />
+      <EditTickerModal open={editOpen} onClose={() => { setEditOpen(false); setEditItem(null) }} onSave={onEditTickerSave} item={editItem} tipos={tipos} sectores={sectores} />
+      {console.log('Rendering EditTickerModal with sectors:', sectores)}
       <RefreshModal open={refreshModal.open} title={refreshModal.title} loading={refreshModal.loading} attempts={refreshModal.attempts} message={refreshModal.message} inserted={refreshModal.inserted} source={refreshModal.source} steps={refreshModal.steps} from={refreshModal.from} to={refreshModal.to} onClose={() => setRefreshModal(m => ({ ...m, open: false }))} />
     </div>
   )

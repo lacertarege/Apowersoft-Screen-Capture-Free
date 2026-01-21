@@ -35,7 +35,18 @@ export function DividendosView() {
     items.forEach(item => {
       Object.keys(item.dividendos_por_anio || {}).forEach(year => years.add(year))
     })
-    return Array.from(years).sort((a, b) => a - b) // Ordenar de menor a mayor (2023, 2024, 2025...)
+    return Array.from(years).sort((a, b) => a - b)
+  }, [items])
+
+  // Obtener todos los mercados únicos (ej. BVL, NYSE, NASDAQ, etc.)
+  const allMarkets = useMemo(() => {
+    const markets = new Set()
+    items.forEach(item => {
+      Object.values(item.dividendos_por_anio_mercado || {}).forEach(yearData => {
+        Object.keys(yearData).forEach(m => markets.add(m))
+      })
+    })
+    return Array.from(markets).sort()
   }, [items])
 
   const handleRowClick = (ticker) => {
@@ -51,30 +62,33 @@ export function DividendosView() {
   // Calcular totales globales por año y mercado
   const totalesGlobales = useMemo(() => {
     const totales = {}
-    
-    // Totales por año y mercado
+
+    // Inicializar totales por año
     allYears.forEach(year => {
-      totales[year] = { 
-        NYSE: { USD: 0, PEN: 0 },
-        BVL: { USD: 0, PEN: 0 }
-      }
+      totales[year] = {}
+      allMarkets.forEach(m => {
+        totales[year][m] = { USD: 0, PEN: 0 }
+      })
     })
-    
+
     items.forEach(item => {
       // Sumar por año y mercado
       allYears.forEach(year => {
         const yearMercadoData = item.dividendos_por_anio_mercado?.[year]
         if (yearMercadoData) {
-          totales[year].NYSE.USD += yearMercadoData.NYSE?.USD || 0
-          totales[year].NYSE.PEN += yearMercadoData.NYSE?.PEN || 0
-          totales[year].BVL.USD += yearMercadoData.BVL?.USD || 0
-          totales[year].BVL.PEN += yearMercadoData.BVL?.PEN || 0
+          Object.keys(yearMercadoData).forEach(mercado => {
+            if (!totales[year][mercado]) {
+              totales[year][mercado] = { USD: 0, PEN: 0 }
+            }
+            totales[year][mercado].USD += yearMercadoData[mercado]?.USD || 0
+            totales[year][mercado].PEN += yearMercadoData[mercado]?.PEN || 0
+          })
         }
       })
     })
-    
+
     return totales
-  }, [items, allYears])
+  }, [items, allYears, allMarkets])
 
   // Establecer año inicial al más reciente
   useEffect(() => {
@@ -90,28 +104,28 @@ export function DividendosView() {
 
   return (
     <div className="container">
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
-        <h2 style={{margin:0}}>Dividendos</h2>
-        <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
-          <button 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h2 style={{ margin: 0 }}>Dividendos</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <button
             className="btn btn-primary"
             onClick={() => setShowResumenModal(true)}
-            style={{padding:'8px 16px', fontSize:'14px'}}
+            style={{ padding: '8px 16px', fontSize: '14px' }}
           >
             📊 Ver Resumen General
           </button>
-          <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-            <label style={{fontWeight:'500'}}>Año:</label>
-            <select 
-              value={selectedYear || ''} 
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <label style={{ fontWeight: '500' }}>Año:</label>
+            <select
+              value={selectedYear || ''}
               onChange={(e) => setSelectedYear(e.target.value)}
               style={{
-                padding:'8px 12px',
-                border:'1px solid #d1d5db',
-                borderRadius:'4px',
-                backgroundColor:'white',
-                fontSize:'14px',
-                cursor:'pointer'
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                backgroundColor: 'white',
+                fontSize: '14px',
+                cursor: 'pointer'
               }}
             >
               {allYears.map(year => (
@@ -130,45 +144,53 @@ export function DividendosView() {
         </div>
       ) : (
         <div className="card">
-          <table style={{margin:0}}>
+          <table style={{ margin: 0 }}>
             <colgroup>
-              <col style={{width:'100px'}} />
-              <col style={{width:'250px'}} />
-              <col style={{width:'100px'}} />
-              <col style={{width:'100px'}} />
-              <col style={{width:'100px'}} />
-              <col style={{width:'100px'}} />
-              <col style={{width:'120px'}} />
+              <col style={{ width: '100px' }} />
+              <col style={{ width: '250px' }} />
+              {/* Columnas dinámicas por mercado */}
+              {allMarkets.map(m => (
+                <React.Fragment key={m}>
+                  <col style={{ width: '100px' }} />
+                  <col style={{ width: '100px' }} />
+                </React.Fragment>
+              ))}
+              <col style={{ width: '120px' }} />
             </colgroup>
             <thead>
               {/* Primera fila: encabezados de mercado */}
               <tr>
-                <th rowSpan="2" style={{verticalAlign:'middle'}}>Ticker</th>
-                <th rowSpan="2" style={{verticalAlign:'middle'}}>Empresa</th>
-                <th colSpan="2" style={{textAlign:'center', borderBottom:'1px solid #d1d5db'}}>NYSE</th>
-                <th colSpan="2" style={{textAlign:'center', borderBottom:'1px solid #d1d5db'}}>BVL</th>
-                <th rowSpan="2" style={{textAlign:'center', verticalAlign:'middle'}}>Acciones</th>
+                <th rowSpan="2" style={{ verticalAlign: 'middle' }}>Ticker</th>
+                <th rowSpan="2" style={{ verticalAlign: 'middle' }}>Empresa</th>
+                {allMarkets.map(m => (
+                  <th key={m} colSpan="2" style={{ textAlign: 'center', borderBottom: '1px solid #d1d5db' }}>{m}</th>
+                ))}
+                <th rowSpan="2" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Acciones</th>
               </tr>
               {/* Segunda fila: subencabezados de moneda */}
               <tr>
-                <th style={{textAlign:'right'}}>USD</th>
-                <th style={{textAlign:'right'}}>PEN</th>
-                <th style={{textAlign:'right'}}>USD</th>
-                <th style={{textAlign:'right'}}>PEN</th>
+                {allMarkets.map(m => (
+                  <React.Fragment key={m}>
+                    <th style={{ textAlign: 'right' }}>USD</th>
+                    <th style={{ textAlign: 'right' }}>PEN</th>
+                  </React.Fragment>
+                ))}
               </tr>
             </thead>
           </table>
-          
-          <div style={{maxHeight:'calc(70vh - 86px)', overflow:'auto', marginTop:'-1px'}}>
-            <table style={{margin:0}}>
+
+          <div style={{ maxHeight: 'calc(70vh - 86px)', overflow: 'auto', marginTop: '-1px' }}>
+            <table style={{ margin: 0 }}>
               <colgroup>
-                <col style={{width:'100px'}} />
-                <col style={{width:'250px'}} />
-                <col style={{width:'100px'}} />
-                <col style={{width:'100px'}} />
-                <col style={{width:'100px'}} />
-                <col style={{width:'100px'}} />
-                <col style={{width:'120px'}} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '250px' }} />
+                {allMarkets.map(m => (
+                  <React.Fragment key={m}>
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '100px' }} />
+                  </React.Fragment>
+                ))}
+                <col style={{ width: '120px' }} />
               </colgroup>
               <tbody>
                 {items.map(item => (
@@ -176,41 +198,34 @@ export function DividendosView() {
                     <td><strong>{item.ticker}</strong></td>
                     <td>{item.nombre}</td>
                     {selectedYear && (() => {
-                      const yearMercadoData = item.dividendos_por_anio_mercado?.[selectedYear] || {
-                        NYSE: { USD: 0, PEN: 0 },
-                        BVL: { USD: 0, PEN: 0 }
-                      }
-                      return (
-                        <>
-                          {/* NYSE */}
-                          <td style={{textAlign:'right'}}>
-                            {yearMercadoData.NYSE?.USD ? fmtCurr(yearMercadoData.NYSE.USD, 'USD').replace('$ ', '') : '-'}
-                          </td>
-                          <td style={{textAlign:'right'}}>
-                            {yearMercadoData.NYSE?.PEN ? fmtCurr(yearMercadoData.NYSE.PEN, 'PEN').replace('S/ ', '') : '-'}
-                          </td>
-                          {/* BVL */}
-                          <td style={{textAlign:'right'}}>
-                            {yearMercadoData.BVL?.USD ? fmtCurr(yearMercadoData.BVL.USD, 'USD').replace('$ ', '') : '-'}
-                          </td>
-                          <td style={{textAlign:'right'}}>
-                            {yearMercadoData.BVL?.PEN ? fmtCurr(yearMercadoData.BVL.PEN, 'PEN').replace('S/ ', '') : '-'}
-                          </td>
-                        </>
-                      )
+                      const yearMercadoData = item.dividendos_por_anio_mercado?.[selectedYear] || {}
+
+                      return allMarkets.map(m => {
+                        const dataMercado = yearMercadoData[m] || { USD: 0, PEN: 0 }
+                        return (
+                          <React.Fragment key={m}>
+                            <td style={{ textAlign: 'right' }}>
+                              {dataMercado.USD ? fmtCurr(dataMercado.USD, 'USD').replace('$ ', '') : '-'}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              {dataMercado.PEN ? fmtCurr(dataMercado.PEN, 'PEN').replace('S/ ', '') : '-'}
+                            </td>
+                          </React.Fragment>
+                        )
+                      })
                     })()}
-                    <td style={{textAlign:'center'}}>
-                      <button 
-                        className="btn btn-sm" 
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        className="btn btn-sm"
                         onClick={(e) => { e.stopPropagation(); handleRegisterDividend(item) }}
-                        style={{padding:'4px 8px', fontSize:'12px'}}
+                        style={{ padding: '4px 8px', fontSize: '12px' }}
                       >
                         ➕ Nuevo
                       </button>
                     </td>
                   </tr>
                 ))}
-                
+
                 {/* Fila de TOTAL GLOBAL */}
                 <tr style={{
                   backgroundColor: '#374151',
@@ -218,32 +233,25 @@ export function DividendosView() {
                   fontWeight: 'bold',
                   fontSize: '1.05em'
                 }}>
-                  <td colSpan="2" style={{textAlign:'right', paddingRight:'12px'}}>
+                  <td colSpan="2" style={{ textAlign: 'right', paddingRight: '12px' }}>
                     TOTAL GLOBAL
                   </td>
                   {selectedYear && (() => {
-                    const totales = totalesGlobales[selectedYear] || {
-                      NYSE: { USD: 0, PEN: 0 },
-                      BVL: { USD: 0, PEN: 0 }
-                    }
-                    return (
-                      <>
-                        {/* NYSE */}
-                        <td style={{textAlign:'right'}}>
-                          {totales.NYSE?.USD > 0 ? fmtCurr(totales.NYSE.USD, 'USD').replace('$ ', '') : '-'}
-                        </td>
-                        <td style={{textAlign:'right'}}>
-                          {totales.NYSE?.PEN > 0 ? fmtCurr(totales.NYSE.PEN, 'PEN').replace('S/ ', '') : '-'}
-                        </td>
-                        {/* BVL */}
-                        <td style={{textAlign:'right'}}>
-                          {totales.BVL?.USD > 0 ? fmtCurr(totales.BVL.USD, 'USD').replace('$ ', '') : '-'}
-                        </td>
-                        <td style={{textAlign:'right'}}>
-                          {totales.BVL?.PEN > 0 ? fmtCurr(totales.BVL.PEN, 'PEN').replace('S/ ', '') : '-'}
-                        </td>
-                      </>
-                    )
+                    const totales = totalesGlobales[selectedYear] || {}
+
+                    return allMarkets.map(m => {
+                      const totalMercado = totales[m] || { USD: 0, PEN: 0 }
+                      return (
+                        <React.Fragment key={m}>
+                          <td style={{ textAlign: 'right' }}>
+                            {totalMercado.USD > 0 ? fmtCurr(totalMercado.USD, 'USD').replace('$ ', '') : '-'}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {totalMercado.PEN > 0 ? fmtCurr(totalMercado.PEN, 'PEN').replace('S/ ', '') : '-'}
+                          </td>
+                        </React.Fragment>
+                      )
+                    })
                   })()}
                   <td></td>
                 </tr>
@@ -251,41 +259,51 @@ export function DividendosView() {
             </table>
           </div>
         </div>
-      )}
+      )
+      }
 
-      {showDetailModal && selectedTicker && (
-        <DetailDividendosModal
-          ticker={selectedTicker}
-          onClose={() => setShowDetailModal(false)}
-          onDividendRegistered={loadResumen}
-          onOpenRegisterModal={() => { setShowDetailModal(false); setShowRegisterModal(true) }}
-        />
-      )}
+      {
+        showDetailModal && selectedTicker && (
+          <DetailDividendosModal
+            ticker={selectedTicker}
+            items={items}
+            onSelectTicker={setSelectedTicker}
+            onClose={() => setShowDetailModal(false)}
+            onDividendRegistered={loadResumen}
+            onOpenRegisterModal={() => { setShowDetailModal(false); setShowRegisterModal(true) }}
+          />
+        )
+      }
 
-      {showRegisterModal && selectedTicker && (
-        <RegisterDividendoModal
-          ticker={selectedTicker}
-          onClose={() => setShowRegisterModal(false)}
-          onSave={() => {
-            setShowRegisterModal(false)
-            loadResumen()
-          }}
-        />
-      )}
+      {
+        showRegisterModal && selectedTicker && (
+          <RegisterDividendoModal
+            ticker={selectedTicker}
+            onClose={() => setShowRegisterModal(false)}
+            onSave={() => {
+              setShowRegisterModal(false)
+              loadResumen()
+            }}
+          />
+        )
+      }
 
-      {showResumenModal && (
-        <ResumenGeneralModal
-          totalesGlobales={totalesGlobales}
-          allYears={allYears}
-          onClose={() => setShowResumenModal(false)}
-        />
-      )}
-    </div>
+      {
+        showResumenModal && (
+          <ResumenGeneralModal
+            totalesGlobales={totalesGlobales}
+            allYears={allYears}
+            allMarkets={allMarkets}
+            onClose={() => setShowResumenModal(false)}
+          />
+        )
+      }
+    </div >
   )
 }
 
 // Modal de detalle de dividendos
-function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRegisterModal }) {
+function DetailDividendosModal({ ticker, items = [], onSelectTicker, onClose, onDividendRegistered, onOpenRegisterModal }) {
   const [dividendos, setDividendos] = useState([])
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(null)
@@ -302,12 +320,12 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
       const r = await fetch(`${API}/dividendos/ticker/${ticker.ticker_id}`)
       const d = await r.json().catch(() => ({}))
       const divs = d.dividendos || []
-      
+
       // Ordenar por fecha de más antigua a más reciente
       divs.sort((a, b) => a.fecha.localeCompare(b.fecha))
-      
+
       setDividendos(divs)
-      
+
       // Cargar tipos de cambio para las fechas de los dividendos
       if (divs.length > 0) {
         await loadTiposCambio(divs.map(div => div.fecha))
@@ -326,13 +344,13 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
       const r = await fetch(`${API}/config/tipo-cambio?limit=1000`)
       const d = await r.json().catch(() => ({}))
       const items = d.items || []
-      
+
       // Crear un mapa de fecha => tipo de cambio
       const tcMap = {}
       items.forEach(tc => {
         tcMap[tc.fecha] = tc.usd_pen
       })
-      
+
       setTiposCambio(tcMap)
     } catch (e) {
       console.error('Error loading tipos de cambio:', e)
@@ -427,8 +445,10 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
       <div style={{
         backgroundColor: 'white',
         borderRadius: '8px',
-        maxWidth: '800px',
-        width: '90%',
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        maxWidth: '900px',
+        width: '95%',
         maxHeight: '80vh',
         overflow: 'auto',
         boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
@@ -440,50 +460,83 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          <h3 style={{margin:0}}>Dividendos de {ticker.ticker} - {ticker.nombre}</h3>
-          <button 
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '24px',
-              cursor: 'pointer',
-              padding: '0 8px'
-            }}
-          >
-            &times;
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h3 style={{ margin: 0 }}>Dividendos de {ticker.ticker} - {ticker.nombre}</h3>
+            {items.length > 0 && onSelectTicker && (() => {
+              const idx = items.findIndex(i => i.ticker_id === ticker.ticker_id)
+              const prev = idx > 0 ? items[idx - 1] : null
+              const next = idx < items.length - 1 ? items[idx + 1] : null
+
+              return (
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    disabled={!prev}
+                    onClick={() => prev && onSelectTicker(prev)}
+                    className="btn btn-sm"
+                    style={{ padding: '2px 8px', fontSize: '12px' }}
+                    title={prev ? `Anterior: ${prev.ticker}` : ''}
+                  >
+                    ◀
+                  </button>
+                  <button
+                    disabled={!next}
+                    onClick={() => next && onSelectTicker(next)}
+                    className="btn btn-sm"
+                    style={{ padding: '2px 8px', fontSize: '12px' }}
+                    title={next ? `Siguiente: ${next.ticker}` : ''}
+                  >
+                    ▶
+                  </button>
+                </div>
+              )
+            })()}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '0 8px'
+              }}
+            >
+              &times;
+            </button>
+          </div>
         </div>
-        
-        <div style={{padding: '24px'}}>
+
+        <div style={{ padding: '24px' }}>
           {loading ? (
             <p>Cargando dividendos...</p>
           ) : dividendos.length === 0 ? (
             <div>
               <p>No hay dividendos registrados para este ticker.</p>
-              <button className="btn btn-primary" onClick={onOpenRegisterModal} style={{marginTop:'12px'}}>
+              <button className="btn btn-primary" onClick={onOpenRegisterModal} style={{ marginTop: '12px' }}>
                 ➕ Registrar primer dividendo
               </button>
             </div>
           ) : (
             <>
-              <div style={{overflowX:'auto'}}>
+              <div style={{ overflowX: 'auto' }}>
                 <table>
                   <thead>
                     <tr>
                       <th>Fecha</th>
-                      <th>Mercado</th>
-                      <th style={{textAlign:'right'}}>Monto</th>
-                      <th style={{textAlign:'right'}}>Tipo de Cambio</th>
-                      <th style={{textAlign:'right'}}>Valor en S/</th>
-                      <th style={{textAlign:'center'}}>Acciones</th>
+                      <th>Exchange</th>
+                      <th>Plataforma</th>
+                      <th style={{ textAlign: 'right' }}>Monto</th>
+                      <th style={{ textAlign: 'right' }}>Tipo de Cambio</th>
+                      <th style={{ textAlign: 'right' }}>Valor en S/</th>
+                      <th style={{ textAlign: 'center' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {Object.keys(dividendosPorAnio).sort().map(anio => {
                       const divsDelAnio = dividendosPorAnio[anio]
                       const subtotal = calcularSubtotalAnio(divsDelAnio)
-                      
+
                       return (
                         <React.Fragment key={`anio-${anio}`}>
                           {/* Dividendos del año */}
@@ -492,17 +545,18 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
                             const valorSoles = getValorEnSoles(d)
                             return (
                               <tr key={d.id}>
-                                <td>{fmtDateLima(d.fecha)}</td>
+                                <td style={{ whiteSpace: 'nowrap' }}>{fmtDateLima(d.fecha)}</td>
                                 <td>{d.mercado || '-'}</td>
-                                <td style={{textAlign:'right'}}>{fmtCurr(d.monto, d.moneda)}</td>
-                                <td style={{textAlign:'right'}}>
+                                <td>{d.plataforma || '-'}</td>
+                                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtCurr(d.monto, d.moneda)}</td>
+                                <td style={{ textAlign: 'right' }}>
                                   {d.moneda === 'USD' ? (tc ? tc.toFixed(3) : '-') : '-'}
                                 </td>
-                                <td style={{textAlign:'right'}}>
+                                <td style={{ textAlign: 'right' }}>
                                   {valorSoles !== null ? fmtCurr(valorSoles, 'PEN') : '-'}
                                 </td>
-                                <td style={{textAlign:'center'}}>
-                                  <div style={{display:'flex', gap:'4px', justifyContent:'center'}}>
+                                <td style={{ textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                     <button
                                       className="btn btn-sm"
                                       onClick={() => handleEdit(d)}
@@ -538,17 +592,17 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
                               </tr>
                             )
                           })}
-                          
+
                           {/* Subtotal del año */}
-                          <tr style={{backgroundColor: '#f3f4f6', fontWeight: 'bold'}}>
-                            <td colSpan="2" style={{textAlign:'right', paddingRight:'8px'}}>
+                          <tr style={{ backgroundColor: '#f3f4f6', fontWeight: 'bold' }}>
+                            <td colSpan="2" style={{ textAlign: 'right', paddingRight: '8px' }}>
                               Subtotal {anio}:
                             </td>
-                            <td style={{textAlign:'right'}}>
+                            <td style={{ textAlign: 'right' }}>
                               {subtotal.USD > 0 ? fmtCurr(subtotal.USD, 'USD') : ''}
                             </td>
                             <td></td>
-                            <td style={{textAlign:'right'}}>
+                            <td style={{ textAlign: 'right' }}>
                               {fmtCurr(subtotal.PEN, 'PEN')}
                             </td>
                             <td></td>
@@ -559,14 +613,14 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
                   </tbody>
                 </table>
               </div>
-              <div style={{ 
+              <div style={{
                 marginTop: '16px',
                 paddingTop: '16px',
                 borderTop: '2px solid #374151'
               }}>
                 <div style={{
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   backgroundColor: '#e5e7eb',
                   padding: '12px',
@@ -575,7 +629,7 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
                   fontSize: '1.1em'
                 }}>
                   <span>TOTAL GENERAL:</span>
-                  <div style={{display: 'flex', gap: '16px'}}>
+                  <div style={{ display: 'flex', gap: '16px' }}>
                     {totalDividendos > 0 && (
                       <span>{fmtCurr(totalDividendos, ticker.moneda)}</span>
                     )}
@@ -584,7 +638,7 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
                     )}
                   </div>
                 </div>
-                <div style={{marginTop: '12px', textAlign: 'right'}}>
+                <div style={{ marginTop: '12px', textAlign: 'right' }}>
                   <button className="btn btn-primary" onClick={onOpenRegisterModal}>
                     ➕ Registrar Nuevo
                   </button>
@@ -616,8 +670,38 @@ function DetailDividendosModal({ ticker, onClose, onDividendRegistered, onOpenRe
 function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSave }) {
   const [fecha, setFecha] = useState(dividendoToEdit ? dividendoToEdit.fecha : '')
   const [monto, setMonto] = useState(dividendoToEdit ? dividendoToEdit.monto : '')
-  const [mercado, setMercado] = useState(dividendoToEdit ? dividendoToEdit.mercado : '')
+  const [exchange, setExchange] = useState(dividendoToEdit ? (dividendoToEdit.mercado || dividendoToEdit.exchange) : 'BVL')
+  const [plataformaId, setPlataformaId] = useState(dividendoToEdit ? dividendoToEdit.plataforma_id : '')
+  const [plataformas, setPlataformas] = useState([])
+  const [exchanges, setExchanges] = useState([])
   const [saving, setSaving] = useState(false)
+
+  // Establecer default de plataforma luego de cargar si no es edición
+  useEffect(() => {
+    if (!dividendoToEdit && !plataformaId && plataformas.length > 0) {
+      // Buscar ID de 'Trii' si existe, o usar el primero
+      const trii = plataformas.find(p => p.nombre === 'Trii')
+      if (trii) setPlataformaId(trii.id)
+    }
+  }, [plataformas, dividendoToEdit])
+
+  // Cargar plataformas y exchanges desde la API
+  useEffect(() => {
+    fetch(`${API}/plataformas?activo=1`)
+      .then(r => r.json())
+      .then(data => {
+        // Ordenar alfabéticamente descendente (Z-A)
+        const items = data.items || []
+        items.sort((a, b) => b.nombre.localeCompare(a.nombre))
+        setPlataformas(items)
+      })
+      .catch(err => console.error('Error cargando plataformas:', err))
+
+    fetch(`${API}/exchanges?activo=1`)
+      .then(r => r.json())
+      .then(data => setExchanges(data.items || []))
+      .catch(err => console.error('Error cargando exchanges:', err))
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -626,8 +710,8 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
       alert('Ingrese una fecha y un monto válido (> 0)')
       return
     }
-    if (!mercado) {
-      alert('Por favor seleccione un mercado')
+    if (!exchange) {
+      alert('Por favor seleccione un exchange')
       return
     }
 
@@ -640,7 +724,8 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
         fecha: fecha,
         monto: m,
         moneda: ticker.moneda,
-        mercado: mercado
+        mercado: exchange,
+        plataforma_id: plataformaId ? Number(plataformaId) : null
       }
 
       const r = await fetch(url, {
@@ -689,10 +774,10 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          <h3 style={{margin:0}}>
+          <h3 style={{ margin: 0 }}>
             {dividendoToEdit ? 'Editar' : 'Registrar'} Dividendo - {ticker.ticker} ({ticker.moneda})
           </h3>
-          <button 
+          <button
             onClick={onClose}
             style={{
               background: 'none',
@@ -705,11 +790,11 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
             &times;
           </button>
         </div>
-        
-        <div style={{padding: '24px'}}>
+
+        <div style={{ padding: '24px' }}>
           <form onSubmit={handleSubmit}>
-            <div style={{marginBottom: '16px'}}>
-              <label style={{display:'block', marginBottom:'4px', fontWeight:'500'}}>Fecha:</label>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Fecha:</label>
               <input
                 type="date"
                 value={fecha}
@@ -723,11 +808,11 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
                 }}
               />
             </div>
-            <div style={{marginBottom: '16px'}}>
-              <label style={{display:'block', marginBottom:'4px', fontWeight:'500'}}>Mercado:</label>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Plataforma:</label>
               <select
-                value={mercado}
-                onChange={(e) => setMercado(e.target.value)}
+                value={plataformaId}
+                onChange={(e) => setPlataformaId(e.target.value)}
                 required
                 style={{
                   width: '100%',
@@ -737,13 +822,34 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
                   backgroundColor: 'white'
                 }}
               >
-                <option value="">-- Seleccione un mercado --</option>
-                <option value="BVL">BVL</option>
-                <option value="NYSE">NYSE</option>
+                <option value="">-- Seleccione plataforma --</option>
+                {plataformas.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
               </select>
             </div>
-            <div style={{marginBottom: '16px'}}>
-              <label style={{display:'block', marginBottom:'4px', fontWeight:'500'}}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>Exchange:</label>
+              <select
+                value={exchange}
+                onChange={(e) => setExchange(e.target.value)}
+                required
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  backgroundColor: 'white'
+                }}
+              >
+                <option value="">-- Seleccione exchange --</option>
+                {exchanges.map(e => (
+                  <option key={e.id} value={e.nombre}>{e.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500' }}>
                 Monto ({ticker.moneda}):
               </label>
               <input
@@ -760,18 +866,18 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
                 }}
               />
             </div>
-            <div style={{display: 'flex', gap: '8px', justifyContent: 'flex-end'}}>
-              <button 
-                type="button" 
-                className="btn" 
-                onClick={onClose} 
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={onClose}
                 disabled={saving}
               >
                 Cancelar
               </button>
-              <button 
-                type="submit" 
-                className="btn btn-primary" 
+              <button
+                type="submit"
+                className="btn btn-primary"
                 disabled={saving}
               >
                 {saving ? 'Guardando...' : 'Guardar Dividendo'}
@@ -785,26 +891,29 @@ function RegisterDividendoModal({ ticker, dividendoToEdit = null, onClose, onSav
 }
 
 // Modal de resumen general por año, mercado y moneda
-function ResumenGeneralModal({ totalesGlobales, allYears, onClose }) {
+function ResumenGeneralModal({ totalesGlobales, allYears, allMarkets, onClose }) {
   // Calcular gran total de todos los años
   const granTotal = useMemo(() => {
-    const total = {
-      NYSE: { USD: 0, PEN: 0 },
-      BVL: { USD: 0, PEN: 0 }
-    }
-    
+    const total = {}
+
+    // Inicializar total por mercado
+    allMarkets.forEach(m => {
+      total[m] = { USD: 0, PEN: 0 }
+    })
+
     allYears.forEach(year => {
       const yearData = totalesGlobales[year]
       if (yearData) {
-        total.NYSE.USD += yearData.NYSE?.USD || 0
-        total.NYSE.PEN += yearData.NYSE?.PEN || 0
-        total.BVL.USD += yearData.BVL?.USD || 0
-        total.BVL.PEN += yearData.BVL?.PEN || 0
+        Object.keys(yearData).forEach(m => {
+          if (!total[m]) total[m] = { USD: 0, PEN: 0 }
+          total[m].USD += yearData[m]?.USD || 0
+          total[m].PEN += yearData[m]?.PEN || 0
+        })
       }
     })
-    
+
     return total
-  }, [totalesGlobales, allYears])
+  }, [totalesGlobales, allYears, allMarkets])
 
   return (
     <div style={{
@@ -839,8 +948,8 @@ function ResumenGeneralModal({ totalesGlobales, allYears, onClose }) {
           backgroundColor: 'white',
           zIndex: 1
         }}>
-          <h3 style={{margin:0}}>📊 Resumen General de Dividendos</h3>
-          <button 
+          <h3 style={{ margin: 0 }}>📊 Resumen General de Dividendos</h3>
+          <button
             onClick={onClose}
             style={{
               background: 'none',
@@ -853,79 +962,75 @@ function ResumenGeneralModal({ totalesGlobales, allYears, onClose }) {
             &times;
           </button>
         </div>
-        
-        <div style={{padding: '24px'}}>
+
+        <div style={{ padding: '24px' }}>
           {allYears.length === 0 ? (
             <p>No hay datos de dividendos para mostrar.</p>
           ) : (
             <>
-              <h4 style={{marginTop: 0, marginBottom: '20px', color: '#374151'}}>
+              <h4 style={{ marginTop: 0, marginBottom: '20px', color: '#374151' }}>
                 Dividendos por Año, Mercado y Moneda
               </h4>
-              
-              <div style={{overflowX: 'auto'}}>
-                <table style={{width: '100%'}}>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%' }}>
                   <thead>
-                    <tr style={{backgroundColor: '#f9fafb'}}>
-                      <th style={{textAlign:'left', padding:'12px'}}>Año</th>
-                      <th style={{textAlign:'left', padding:'12px'}}>Mercado</th>
-                      <th style={{textAlign:'right', padding:'12px'}}>USD</th>
-                      <th style={{textAlign:'right', padding:'12px'}}>PEN</th>
+                    <tr style={{ backgroundColor: '#f9fafb' }}>
+                      <th style={{ textAlign: 'left', padding: '12px' }}>Año</th>
+                      <th style={{ textAlign: 'left', padding: '12px' }}>Mercado</th>
+                      <th style={{ textAlign: 'right', padding: '12px' }}>USD</th>
+                      <th style={{ textAlign: 'right', padding: '12px' }}>PEN</th>
                     </tr>
                   </thead>
                   <tbody>
                     {allYears.map(year => {
-                      const yearData = totalesGlobales[year] || {
-                        NYSE: { USD: 0, PEN: 0 },
-                        BVL: { USD: 0, PEN: 0 }
-                      }
-                      
-                      const totalAnio = {
-                        USD: (yearData.NYSE?.USD || 0) + (yearData.BVL?.USD || 0),
-                        PEN: (yearData.NYSE?.PEN || 0) + (yearData.BVL?.PEN || 0)
-                      }
-                      
+                      const yearData = totalesGlobales[year] || {}
+
+                      const totalAnio = { USD: 0, PEN: 0 }
+                      allMarkets.forEach(m => {
+                        totalAnio.USD += yearData[m]?.USD || 0
+                        totalAnio.PEN += yearData[m]?.PEN || 0
+                      })
+
                       return (
                         <React.Fragment key={year}>
-                          {/* NYSE */}
-                          <tr>
-                            <td style={{padding:'10px 12px'}} rowSpan="2">
-                              <strong style={{fontSize:'1.05em'}}>{year}</strong>
-                            </td>
-                            <td style={{padding:'10px 12px'}}>NYSE</td>
-                            <td style={{textAlign:'right', padding:'10px 12px'}}>
-                              {yearData.NYSE?.USD > 0 ? fmtCurr(yearData.NYSE.USD, 'USD') : '-'}
-                            </td>
-                            <td style={{textAlign:'right', padding:'10px 12px'}}>
-                              {yearData.NYSE?.PEN > 0 ? fmtCurr(yearData.NYSE.PEN, 'PEN') : '-'}
-                            </td>
-                          </tr>
-                          {/* BVL */}
-                          <tr>
-                            <td style={{padding:'10px 12px'}}>BVL</td>
-                            <td style={{textAlign:'right', padding:'10px 12px'}}>
-                              {yearData.BVL?.USD > 0 ? fmtCurr(yearData.BVL.USD, 'USD') : '-'}
-                            </td>
-                            <td style={{textAlign:'right', padding:'10px 12px'}}>
-                              {yearData.BVL?.PEN > 0 ? fmtCurr(yearData.BVL.PEN, 'PEN') : '-'}
-                            </td>
-                          </tr>
+                          {/* Datos por Mercado */}
+                          {allMarkets.map((m, idx) => (
+                            <tr key={`${year}-${m}`}>
+                              {/* Primera fila del año: mostrar celda con año.
+                                   Pero aquí estamos haciendo una fila por cada mercado.
+                                   Podemos hacer fila 1 con rowspan */}
+                              {idx === 0 && (
+                                <td style={{ padding: '10px 12px' }} rowSpan={allMarkets.length}>
+                                  <strong style={{ fontSize: '1.05em' }}>{year}</strong>
+                                </td>
+                              )}
+                              <td style={{ padding: '10px 12px' }}>{m}</td>
+                              <td style={{ textAlign: 'right', padding: '10px 12px' }}>
+                                {yearData[m]?.USD > 0 ? fmtCurr(yearData[m].USD, 'USD') : '-'}
+                              </td>
+                              <td style={{ textAlign: 'right', padding: '10px 12px' }}>
+                                {yearData[m]?.PEN > 0 ? fmtCurr(yearData[m].PEN, 'PEN') : '-'}
+                              </td>
+                            </tr>
+                          ))}
+
                           {/* Subtotal del año */}
-                          <tr style={{backgroundColor: '#f3f4f6', fontWeight: 'bold'}}>
-                            <td colSpan="2" style={{padding:'10px 12px', textAlign:'right'}}>
+                          <tr style={{ backgroundColor: '#f3f4f6', fontWeight: 'bold' }}>
+                            <td colSpan="2" style={{ padding: '10px 12px', textAlign: 'right' }}>
                               Subtotal {year}:
                             </td>
-                            <td style={{textAlign:'right', padding:'10px 12px'}}>
+                            <td style={{ textAlign: 'right', padding: '10px 12px' }}>
                               {totalAnio.USD > 0 ? fmtCurr(totalAnio.USD, 'USD') : '-'}
                             </td>
-                            <td style={{textAlign:'right', padding:'10px 12px'}}>
+                            <td style={{ textAlign: 'right', padding: '10px 12px' }}>
                               {totalAnio.PEN > 0 ? fmtCurr(totalAnio.PEN, 'PEN') : '-'}
                             </td>
                           </tr>
                         </React.Fragment>
                       )
                     })}
-                    
+
                     {/* TOTAL GENERAL */}
                     <tr style={{
                       backgroundColor: '#374151',
@@ -933,17 +1038,17 @@ function ResumenGeneralModal({ totalesGlobales, allYears, onClose }) {
                       fontWeight: 'bold',
                       fontSize: '1.1em'
                     }}>
-                      <td colSpan="2" style={{padding:'14px 12px', textAlign:'right'}}>
+                      <td colSpan="2" style={{ padding: '14px 12px', textAlign: 'right' }}>
                         TOTAL GENERAL:
                       </td>
-                      <td style={{textAlign:'right', padding:'14px 12px'}}>
-                        {(granTotal.NYSE.USD + granTotal.BVL.USD) > 0 
-                          ? fmtCurr(granTotal.NYSE.USD + granTotal.BVL.USD, 'USD') 
+                      <td style={{ textAlign: 'right', padding: '14px 12px' }}>
+                        {Object.values(granTotal).reduce((sum, v) => sum + v.USD, 0) > 0
+                          ? fmtCurr(Object.values(granTotal).reduce((sum, v) => sum + v.USD, 0), 'USD')
                           : '-'}
                       </td>
-                      <td style={{textAlign:'right', padding:'14px 12px'}}>
-                        {(granTotal.NYSE.PEN + granTotal.BVL.PEN) > 0 
-                          ? fmtCurr(granTotal.NYSE.PEN + granTotal.BVL.PEN, 'PEN') 
+                      <td style={{ textAlign: 'right', padding: '14px 12px' }}>
+                        {Object.values(granTotal).reduce((sum, v) => sum + v.PEN, 0) > 0
+                          ? fmtCurr(Object.values(granTotal).reduce((sum, v) => sum + v.PEN, 0), 'PEN')
                           : '-'}
                       </td>
                     </tr>
@@ -952,58 +1057,38 @@ function ResumenGeneralModal({ totalesGlobales, allYears, onClose }) {
               </div>
 
               {/* Resumen por mercado */}
-              <div style={{marginTop: '30px'}}>
-                <h4 style={{marginBottom: '15px', color: '#374151'}}>
+              <div style={{ marginTop: '30px' }}>
+                <h4 style={{ marginBottom: '15px', color: '#374151' }}>
                   Resumen por Mercado (Todos los años)
                 </h4>
-                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px'}}>
-                  {/* NYSE */}
-                  <div style={{
-                    padding: '20px',
-                    backgroundColor: '#eff6ff',
-                    borderRadius: '8px',
-                    border: '1px solid #bfdbfe'
-                  }}>
-                    <h5 style={{margin: '0 0 12px 0', color: '#1e40af'}}>NYSE</h5>
-                    <div style={{fontSize: '0.95em'}}>
-                      <div style={{marginBottom: '8px'}}>
-                        <span style={{fontWeight: '500'}}>USD:</span>{' '}
-                        <span style={{fontWeight: 'bold'}}>
-                          {granTotal.NYSE.USD > 0 ? fmtCurr(granTotal.NYSE.USD, 'USD') : '-'}
-                        </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+                  {allMarkets.map(m => {
+                    const data = granTotal[m] || { USD: 0, PEN: 0 }
+                    return (
+                      <div key={m} style={{
+                        padding: '20px',
+                        backgroundColor: '#eff6ff',
+                        borderRadius: '8px',
+                        border: '1px solid #bfdbfe'
+                      }}>
+                        <h5 style={{ margin: '0 0 12px 0', color: '#1e40af' }}>{m}</h5>
+                        <div style={{ fontSize: '0.95em' }}>
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontWeight: '500' }}>USD:</span>{' '}
+                            <span style={{ fontWeight: 'bold' }}>
+                              {data.USD > 0 ? fmtCurr(data.USD, 'USD') : '-'}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ fontWeight: '500' }}>PEN:</span>{' '}
+                            <span style={{ fontWeight: 'bold' }}>
+                              {data.PEN > 0 ? fmtCurr(data.PEN, 'PEN') : '-'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span style={{fontWeight: '500'}}>PEN:</span>{' '}
-                        <span style={{fontWeight: 'bold'}}>
-                          {granTotal.NYSE.PEN > 0 ? fmtCurr(granTotal.NYSE.PEN, 'PEN') : '-'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* BVL */}
-                  <div style={{
-                    padding: '20px',
-                    backgroundColor: '#f0fdf4',
-                    borderRadius: '8px',
-                    border: '1px solid #bbf7d0'
-                  }}>
-                    <h5 style={{margin: '0 0 12px 0', color: '#15803d'}}>BVL</h5>
-                    <div style={{fontSize: '0.95em'}}>
-                      <div style={{marginBottom: '8px'}}>
-                        <span style={{fontWeight: '500'}}>USD:</span>{' '}
-                        <span style={{fontWeight: 'bold'}}>
-                          {granTotal.BVL.USD > 0 ? fmtCurr(granTotal.BVL.USD, 'USD') : '-'}
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{fontWeight: '500'}}>PEN:</span>{' '}
-                        <span style={{fontWeight: 'bold'}}>
-                          {granTotal.BVL.PEN > 0 ? fmtCurr(granTotal.BVL.PEN, 'PEN') : '-'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                    )
+                  })}
                 </div>
               </div>
             </>

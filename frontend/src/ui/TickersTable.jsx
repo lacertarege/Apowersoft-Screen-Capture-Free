@@ -65,6 +65,8 @@ export default function TickersTable({ items, currency = 'PEN', onDelete, onOpen
           av = num(a.balance); bv = num(b.balance)
           break
         }
+        case 'pais': av = str(a.pais); bv = str(b.pais); break
+        case 'sector_nombre': av = str(a.sector_nombre); bv = str(b.sector_nombre); break
         default: av = 0; bv = 0
       }
       if (av === bv) return 0
@@ -145,11 +147,13 @@ export default function TickersTable({ items, currency = 'PEN', onDelete, onOpen
       <div style={{ overflowX: 'auto', marginTop: '8px' }}>
         <table style={{ fontSize: '13px', minWidth: '900px', width: '100%', borderCollapse: 'collapse' }}>
           <colgroup>
-            <col style={{ minWidth: '80px' }} /><col style={{ width: '105px' }} /><col style={{ width: '85px' }} /><col style={{ width: '105px' }} /><col style={{ width: '150px' }} /><col style={{ width: '60px' }} /><col style={{ width: '7%' }} />
+            <col style={{ minWidth: '80px' }} /><col style={{ width: '80px' }} /><col style={{ width: '120px' }} /><col style={{ width: '105px' }} /><col style={{ width: '85px' }} /><col style={{ width: '105px' }} /><col style={{ width: '150px' }} /><col style={{ width: '60px' }} /><col style={{ width: '7%' }} />
           </colgroup>
           <thead>
             <tr>
               <th style={{ cursor: 'pointer', textAlign: 'left', whiteSpace: 'nowrap', padding: '8px 6px', paddingLeft: '8px' }} onClick={() => handleEmpresasSort('ticker')}>Activo{getEmpresasSortIcon('ticker')}</th>
+              <th style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '8px 6px', textAlign: 'center' }} onClick={() => handleEmpresasSort('pais')}>País{getEmpresasSortIcon('pais')}</th>
+              <th style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '8px 6px', textAlign: 'left' }} onClick={() => handleEmpresasSort('sector_nombre')}>Sector{getEmpresasSortIcon('sector_nombre')}</th>
               <th style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '8px 6px', textAlign: 'right' }} onClick={() => handleEmpresasSort('precio_reciente')}>Precio{getEmpresasSortIcon('precio_reciente')}</th>
               <th style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '8px 6px', textAlign: 'right' }} onClick={() => handleEmpresasSort('cantidad_total')}>Cant.{getEmpresasSortIcon('cantidad_total')}</th>
               <th style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '8px 6px', textAlign: 'right' }} onClick={() => handleEmpresasSort('valor_actual')}>Valor{getEmpresasSortIcon('valor_actual')}</th>
@@ -176,7 +180,7 @@ export default function TickersTable({ items, currency = 'PEN', onDelete, onOpen
               />
             ))}
           </tbody>
-          <tbody><tr><td colSpan="7" style={{ height: 0, padding: 0, borderBottom: '2px solid var(--border)' }}></td></tr></tbody>
+          <tbody><tr><td colSpan="8" style={{ height: 0, padding: 0, borderBottom: '2px solid var(--border)' }}></td></tr></tbody>
         </table>
       </div>
     </div>

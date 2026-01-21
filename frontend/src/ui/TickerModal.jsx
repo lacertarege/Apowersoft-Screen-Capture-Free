@@ -1,23 +1,33 @@
 import React, { useState, useEffect } from 'react'
 import { API } from './config'
 
-export default function TickerModal({ open, onClose, onSave, tipos = [], defaultMoneda = 'USD' }){
+export default function TickerModal({ open, onClose, onSave, tipos = [], defaultMoneda = 'USD' }) {
   const [ticker, setTicker] = useState('')
   const [nombre, setNombre] = useState('')
   const [moneda, setMoneda] = useState(defaultMoneda)
   const [tipoInversionId, setTipoInversionId] = useState('')
-  
+  const [pais, setPais] = useState('')
+
+  // Lista de países comunes
+  const countries = [
+    'Estados Unidos', 'Perú', 'Bermudas', 'Reino Unido',
+    'Canadá', 'Irlanda', 'Luxemburgo', 'Suiza',
+    'España', 'Chile', 'Colombia', 'México', 'Brasil',
+    'Islas Caimán', 'Panamá'
+  ]
+
   // Estados para la búsqueda
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)
   const [showSearchResults, setShowSearchResults] = useState(false)
 
-  useEffect(()=>{
-    if (open){
+  useEffect(() => {
+    if (open) {
       setTicker('')
       setNombre('')
       setMoneda(defaultMoneda)
+      setPais('')
       setSearchQuery('')
       setSearchResults([])
       setShowSearchResults(false)
@@ -54,6 +64,8 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
     setTicker(company.ticker)
     setNombre(company.nombre)
     setMoneda(company.moneda || 'USD')
+    // Resetear país al seleccionar de búsqueda (podría inferirse si tuviéramos ISIN aquí, pero por ahora manual)
+    setPais('')
     setSearchQuery('')
     setSearchResults([])
     setShowSearchResults(false)
@@ -63,13 +75,13 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
   const handleSearchChange = (e) => {
     const value = e.target.value
     setSearchQuery(value)
-    
+
     // Si el usuario está escribiendo en el campo de búsqueda, limpiar los campos
     if (value && (ticker || nombre)) {
       setTicker('')
       setNombre('')
     }
-    
+
     // Buscar con debounce
     clearTimeout(window.searchTimeout)
     window.searchTimeout = setTimeout(() => {
@@ -96,13 +108,14 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
 
   const canSave = ticker.trim() && nombre.trim() && moneda && (tipoInversionId !== '')
 
-  const handleSave = ()=>{
+  const handleSave = () => {
     if (!canSave) return
     onSave({
       ticker: ticker.trim().toUpperCase(),
       nombre: nombre.trim(),
       moneda,
-      tipo_inversion_id: Number(tipoInversionId)
+      tipo_inversion_id: Number(tipoInversionId),
+      pais: pais || null
     })
   }
 
@@ -114,7 +127,7 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
           <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em' }}>
             Nueva Empresa
           </h3>
-          <button 
+          <button
             onClick={onClose}
             style={{
               background: 'none',
@@ -143,8 +156,8 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
         <div className="modal-body">
           {/* Sección de búsqueda */}
           <div style={{ marginBottom: 'var(--space-lg)' }}>
-            <label style={{ 
-              display: 'block', 
+            <label style={{
+              display: 'block',
               marginBottom: 'var(--space-sm)',
               fontSize: '15px',
               fontWeight: 600,
@@ -154,21 +167,21 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
               Buscar Empresa
             </label>
             <div className="search-container" style={{ position: 'relative' }}>
-              <input 
-                value={searchQuery} 
-                onChange={handleSearchChange} 
-                placeholder="AAPL, Apple, Microsoft..." 
-                style={{ 
+              <input
+                value={searchQuery}
+                onChange={handleSearchChange}
+                placeholder="AAPL, Apple, Microsoft..."
+                style={{
                   width: '100%',
                   paddingRight: isSearching ? '100px' : '16px'
                 }}
                 autoFocus
               />
               {isSearching && (
-                <div style={{ 
-                  position: 'absolute', 
-                  right: '16px', 
-                  top: '50%', 
+                <div style={{
+                  position: 'absolute',
+                  right: '16px',
+                  top: '50%',
                   transform: 'translateY(-50%)',
                   display: 'flex',
                   alignItems: 'center',
@@ -178,7 +191,7 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                   <span style={{ fontSize: '13px', color: 'var(--fg-tertiary)' }}>Buscando...</span>
                 </div>
               )}
-              
+
               {/* Resultados de búsqueda */}
               {showSearchResults && searchResults.length > 0 && (
                 <div style={{
@@ -196,9 +209,9 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                   animation: 'slideUp 200ms ease-out'
                 }}>
                   {searchResults.map((company, index) => (
-                    <div 
+                    <div
                       key={index}
-                      className="search-result-item" 
+                      className="search-result-item"
                       onClick={() => selectCompany(company)}
                       style={{
                         padding: 'var(--space-sm) var(--space-md)',
@@ -207,23 +220,23 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                         transition: 'background var(--transition-fast)'
                       }}
                     >
-                      <div style={{ 
-                        fontWeight: 600, 
-                        fontSize: '14px', 
+                      <div style={{
+                        fontWeight: 600,
+                        fontSize: '14px',
                         marginBottom: '2px',
                         color: 'var(--fg)'
                       }}>
                         {company.ticker}
                       </div>
-                      <div style={{ 
-                        fontSize: '13px', 
+                      <div style={{
+                        fontSize: '13px',
                         color: 'var(--fg-secondary)',
                         marginBottom: '1px'
                       }}>
                         {company.nombre}
                       </div>
-                      <div style={{ 
-                        fontSize: '12px', 
+                      <div style={{
+                        fontSize: '12px',
                         color: 'var(--fg-tertiary)'
                       }}>
                         {company.moneda}
@@ -232,7 +245,7 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                   ))}
                 </div>
               )}
-              
+
               {showSearchResults && searchResults.length === 0 && !isSearching && (
                 <div style={{
                   position: 'absolute',
@@ -253,9 +266,9 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                 </div>
               )}
             </div>
-            <p style={{ 
-              fontSize: '12px', 
-              color: 'var(--fg-tertiary)', 
+            <p style={{
+              fontSize: '12px',
+              color: 'var(--fg-tertiary)',
               marginTop: 'var(--space-xs)',
               marginBottom: 0
             }}>
@@ -264,15 +277,15 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
           </div>
 
           {/* Separador visual */}
-          <div style={{ 
-            height: '1px', 
-            background: 'var(--separator)', 
-            margin: 'var(--space-lg) 0' 
+          <div style={{
+            height: '1px',
+            background: 'var(--separator)',
+            margin: 'var(--space-lg) 0'
           }}></div>
 
           {/* Información de la empresa */}
           <div>
-            <h4 style={{ 
+            <h4 style={{
               margin: '0 0 var(--space-md) 0',
               fontSize: '15px',
               fontWeight: 600,
@@ -287,19 +300,19 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-sm)' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>Símbolo</label>
-                  <input 
-                    value={ticker} 
-                    onChange={e=>setTicker(e.target.value.toUpperCase())} 
-                    placeholder="AAPL" 
+                  <input
+                    value={ticker}
+                    onChange={e => setTicker(e.target.value.toUpperCase())}
+                    placeholder="AAPL"
                     style={{ textTransform: 'uppercase', padding: '8px 12px', fontSize: '14px' }}
                   />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>Nombre completo</label>
-                  <input 
-                    value={nombre} 
-                    onChange={e=>setNombre(e.target.value)} 
-                    placeholder="Apple Inc." 
+                  <input
+                    value={nombre}
+                    onChange={e => setNombre(e.target.value)}
+                    placeholder="Apple Inc."
                     style={{ padding: '8px 12px', fontSize: '14px' }}
                   />
                 </div>
@@ -309,21 +322,38 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>Moneda</label>
-                  <select value={moneda} onChange={e=>setMoneda(e.target.value)} style={{ padding: '8px 12px', fontSize: '14px' }}>
+                  <select value={moneda} onChange={e => setMoneda(e.target.value)} style={{ padding: '8px 12px', fontSize: '14px' }}>
                     <option value="USD">🇺🇸 Dólar (USD)</option>
                     <option value="PEN">🇵🇪 Sol (PEN)</option>
                   </select>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>Tipo</label>
-                  <select value={tipoInversionId} onChange={e=>setTipoInversionId(e.target.value)} style={{ padding: '8px 12px', fontSize: '14px' }}>
+                  <select value={tipoInversionId} onChange={e => setTipoInversionId(e.target.value)} style={{ padding: '8px 12px', fontSize: '14px' }}>
                     {tipos.length === 0 ? (
                       <option value="">Sin tipos disponibles</option>
                     ) : (
-                      tipos.map(t=> (
+                      tipos.map(t => (
                         <option key={t.id} value={String(t.id)}>{t.nombre}</option>
                       ))
                     )}
+                  </select>
+                </div>
+              </div>
+
+              {/* País */}
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>País</label>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={pais}
+                    onChange={e => setPais(e.target.value)}
+                    style={{ padding: '8px 12px', fontSize: '14px', width: '100%' }}
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {countries.sort().map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -333,7 +363,7 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
 
         {/* Footer */}
         <div className="modal-footer">
-          <button 
+          <button
             onClick={onClose}
             style={{
               padding: '10px 20px',
@@ -343,9 +373,9 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
           >
             Cancelar
           </button>
-          <button 
-            onClick={handleSave} 
-            disabled={!canSave} 
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
             className="btn-primary"
             style={{
               padding: '10px 20px',

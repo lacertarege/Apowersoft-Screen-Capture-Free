@@ -117,6 +117,16 @@ Retorno Total: ${fmtCurr(totalReturn, ticker.moneda)}`
         </div>
       </td>
 
+      {/* PAIS */}
+      <td style={{ ...cellStyle, textAlign: 'center', fontSize: '12px', color: '#64748b' }}>
+        {ticker.pais || '-'}
+      </td>
+
+      {/* SECTOR */}
+      <td style={{ ...cellStyle, textAlign: 'left', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+        {ticker.sector_nombre || '-'}
+      </td>
+
       {/* PRECIO */}
       <td style={{ ...cellStyle, textAlign: 'right', fontFamily: 'Roboto Mono, monospace' }}>
         {fmtCurr(ticker.precio_reciente, ticker.moneda)}
@@ -260,6 +270,26 @@ Retorno Total: ${fmtCurr(totalReturn, ticker.moneda)}`
                 <span>➖</span> Desinversión
               </button>
               <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
+              <button
+                onClick={() => { onEdit?.(ticker); setShowContextMenu(false) }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: 'none',
+                  background: 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'background-color 0.15s'
+                }}
+                onMouseOver={(e) => e.target.style.backgroundColor = 'var(--bg-hover, #f3f4f6)'}
+                onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+              >
+                <span>✏️</span> Editar Ticker
+              </button>
               <button
                 onClick={() => { onShowEvolucion?.(ticker); setShowContextMenu(false) }}
                 style={{

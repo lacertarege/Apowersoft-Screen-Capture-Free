@@ -294,6 +294,22 @@ export default function NuevaInversionModal({ open, onClose, onSave, empresa }) 
               </select>
             </div>
 
+            {/* Exchange (solo lectura) */}
+            {empresa?.exchange && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Exchange</label>
+                <input
+                  value={empresa.exchange}
+                  disabled
+                  style={{
+                    backgroundColor: 'var(--bg)',
+                    color: 'var(--fg-secondary)',
+                    cursor: 'not-allowed'
+                  }}
+                />
+              </div>
+            )}
+
             {/* Checkbox de Reinversión */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{

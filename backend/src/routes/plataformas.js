@@ -7,15 +7,19 @@ export function plataformasRouter(db) {
     r.get('/', (req, res) => {
         try {
             const { activo } = req.query
-            let query = 'SELECT * FROM plataformas'
+            let query = `
+                SELECT p.*, e.nombre as exchange_nombre 
+                FROM plataformas p
+                LEFT JOIN exchanges e ON p.exchange_id = e.id
+            `
             const params = []
 
             if (activo !== undefined) {
-                query += ' WHERE activo = ?'
+                query += ' WHERE p.activo = ?'
                 params.push(Number(activo))
             }
 
-            query += ' ORDER BY nombre ASC'
+            query += ' ORDER BY p.nombre ASC'
             const items = db.prepare(query).all(...params)
             res.json({ items })
         } catch (error) {
@@ -27,7 +31,12 @@ export function plataformasRouter(db) {
     r.get('/:id', (req, res) => {
         try {
             const id = Number(req.params.id)
-            const item = db.prepare('SELECT * FROM plataformas WHERE id = ?').get(id)
+            const item = db.prepare(`
+                SELECT p.*, e.nombre as exchange_nombre 
+                FROM plataformas p
+                LEFT JOIN exchanges e ON p.exchange_id = e.id
+                WHERE p.id = ?
+            `).get(id)
             if (!item) {
                 return res.status(404).json({ error: 'Plataforma no encontrada' })
             }
@@ -40,7 +49,7 @@ export function plataformasRouter(db) {
     // POST /plataformas - Create new platform
     r.post('/', (req, res) => {
         try {
-            const { nombre, exchange, moneda_principal, pais, url, activo } = req.body
+            const { nombre, exchange_id, moneda_principal, pais, url, activo } = req.body
 
             if (!nombre || nombre.trim() === '') {
                 return res.status(400).json({ error: 'El nombre es requerido' })
@@ -53,11 +62,11 @@ export function plataformasRouter(db) {
             }
 
             const result = db.prepare(`
-        INSERT INTO plataformas (nombre, exchange, moneda_principal, pais, url, activo)
+        INSERT INTO plataformas (nombre, exchange_id, moneda_principal, pais, url, activo)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(
                 nombre.trim(),
-                exchange || null,
+                exchange_id || null,
                 moneda_principal || 'USD',
                 pais || null,
                 url || null,
@@ -75,7 +84,7 @@ export function plataformasRouter(db) {
     r.put('/:id', (req, res) => {
         try {
             const id = Number(req.params.id)
-            const { nombre, exchange, moneda_principal, pais, url, activo } = req.body
+            const { nombre, exchange_id, moneda_principal, pais, url, activo } = req.body
 
             const existing = db.prepare('SELECT * FROM plataformas WHERE id = ?').get(id)
             if (!existing) {
@@ -92,11 +101,11 @@ export function plataformasRouter(db) {
 
             db.prepare(`
         UPDATE plataformas 
-        SET nombre = ?, exchange = ?, moneda_principal = ?, pais = ?, url = ?, activo = ?
+        SET nombre = ?, exchange_id = ?, moneda_principal = ?, pais = ?, url = ?, activo = ?
         WHERE id = ?
       `).run(
                 nombre !== undefined ? nombre.trim() : existing.nombre,
-                exchange !== undefined ? exchange : existing.exchange,
+                exchange_id !== undefined ? exchange_id : existing.exchange_id,
                 moneda_principal !== undefined ? moneda_principal : existing.moneda_principal,
                 pais !== undefined ? pais : existing.pais,
                 url !== undefined ? url : existing.url,
@@ -146,8 +155,20 @@ export function plataformasRouter(db) {
     // GET /plataformas/options - Get platforms for dropdown
     r.get('/select/options', (req, res) => {
         try {
-            const items = db.prepare('SELECT id, nombre FROM plataformas WHERE activo = 1 ORDER BY nombre ASC').all()
-            res.json(items.map(i => ({ value: i.nombre, label: i.nombre })))
+            const items = db.prepare(`
+                SELECT p.id, p.nombre, p.exchange_id, e.nombre as exchange_nombre 
+                FROM plataformas p
+                LEFT JOIN exchanges e ON p.exchange_id = e.id
+                WHERE p.activo = 1 
+                ORDER BY p.nombre ASC
+            `).all()
+            res.json(items.map(i => ({
+                value: i.nombre,
+                label: i.nombre,
+                id: i.id,
+                exchange: i.exchange_nombre,
+                exchange_id: i.exchange_id
+            })))
         } catch (error) {
             res.status(500).json({ error: error.message })
         }

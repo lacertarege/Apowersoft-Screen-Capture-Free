@@ -8,6 +8,8 @@ import { DividendosView } from './DividendosView.jsx'
 import TiposInversionView from './TiposInversionView.jsx'
 import PlataformasView from './PlataformasView.jsx'
 
+import SectoresView from './SectoresView.jsx'
+
 export default function App() {
   const [route, setRoute] = useState('empresas')
 
@@ -40,6 +42,9 @@ export default function App() {
       )}
       {route === 'tipos-inversion' && (
         <TiposInversionView />
+      )}
+      {route === 'sectores' && (
+        <SectoresView />
       )}
       {route === 'plataformas' && (
         <PlataformasView />

@@ -39,6 +39,8 @@ export function tickersRouter(db) {
         v.primera_compra,
         v.fecha,
         v.precio_reciente,
+        (SELECT pais FROM tickers WHERE id = v.id) as pais,
+        (SELECT s.nombre FROM sectores s JOIN tickers t ON t.sector_id = s.id WHERE t.id = v.id) as sector_nombre,
         (SELECT COALESCE(SUM(monto), 0) FROM dividendos WHERE ticker_id = v.id) as total_dividends
       FROM v_resumen_empresas v
       WHERE v.ticker LIKE ? OR v.nombre LIKE ?
@@ -88,15 +90,20 @@ export function tickersRouter(db) {
       ? processedRows
       : processedRows.filter(row => row.cantidad_total > 0.000001)
 
-    const total = db.prepare(`SELECT COUNT(*) as c FROM v_resumen_empresas v WHERE v.ticker LIKE ? OR v.nombre LIKE ?`).get(`%${q}%`, `%${q}%`).c
+    const total = db.prepare(`SELECT COUNT(*) as c FROM v_resumen_empresas v WHERE v.ticker LIKE ? OR v.nombre LIKE ? `).get(` % ${q}% `, ` % ${q}% `).c
     res.json({ items: filteredRows, total })
   })
 
   r.get('/:id', (req, res) => {
     const id = Number(req.params.id)
-    const row = db.prepare('SELECT * FROM tickers WHERE id = ?').get(id)
+    const row = db.prepare(`
+      SELECT t.*, ti.nombre as tipo_inversion_nombre
+      FROM tickers t
+      LEFT JOIN tipos_inversion ti ON t.tipo_inversion_id = ti.id
+      WHERE t.id = ?
+    `).get(id)
     if (!row) return res.status(404).json({ error: 'not found' })
-    const precio = db.prepare(`SELECT fecha, precio FROM precios_historicos WHERE ticker_id=? ORDER BY fecha DESC LIMIT 1`).get(id)
+    const precio = db.prepare(`SELECT fecha, precio FROM precios_historicos WHERE ticker_id =? ORDER BY fecha DESC LIMIT 1`).get(id)
     res.json({ ...row, precio })
   })
 
@@ -104,21 +111,44 @@ export function tickersRouter(db) {
     const id = Number(req.params.id)
 
     // 1. Get Investments
-    const investments = db.prepare('SELECT * FROM inversiones WHERE ticker_id = ?').all(id)
+    const investments = db.prepare(`
+      SELECT i.*, e.nombre as exchange_nombre 
+      FROM inversiones i
+      LEFT JOIN exchanges e ON i.exchange_id = e.id
+      WHERE i.ticker_id = ?
+    `).all(id)
 
     // 2. Get Dividends
-    const dividends = db.prepare('SELECT * FROM dividendos WHERE ticker_id = ?').all(id)
+    // 2. Get Dividends
+    const dividends = db.prepare(`
+      SELECT d.*, p.nombre as plataforma_nombre, e.nombre as exchange_nombre
+      FROM dividendos d
+      LEFT JOIN plataformas p ON d.plataforma_id = p.id
+      LEFT JOIN exchanges e ON d.exchange_id = e.id
+      WHERE d.ticker_id = ?
+    `).all(id)
 
     // 3. Format Dividends to look like Investments
+    // Also join with exchanges for dividends if needed, but for now assuming dividends use platform/exchange logic
+    // Actually, dividends table also has exchange_id. Let's update that query too? 
+    // Wait, step 2 query was updated in previous turn. Let's check it.
+    // Yes, step 2 query was updated. We should update it to also fetch exchange_nombre if dividendos has exchange_id.
+    // Checking dividendos schema: it has exchange_id.
+
+    // Let's update the dividends query first.
+    // But I can't target previous lines easily if I don't see them.
+    // I entered this block to update inv query. 
+    // I will do another call for dividends if needed.
     const formattedDividends = dividends.map(d => ({
-      id: `div_${d.id}`, // Unique ID string to avoid collision with numeric investment IDs
+      id: `div_${d.id} `, // Unique ID string to avoid collision with numeric investment IDs
       original_id: d.id,
       ticker_id: d.ticker_id,
       fecha: d.fecha_pago || d.fecha, // Use payment date if available
       importe: d.monto,
       cantidad: 0, // No quantity change
       tipo_operacion: 'DIVIDENDO',
-      plataforma: 'BVL', // Usually dividends come via broker but source is BVL/Company
+      plataforma: d.plataforma || d.plataforma_nombre || 'BVL', // Use Platform Name or default
+      exchange_nombre: d.exchange_nombre, // Pass exchange name
       realized_return: d.monto, // The whole dividend amount is realized gain
       is_dividend: true
     }))
@@ -187,7 +217,7 @@ export function tickersRouter(db) {
   })
 
   r.post('/', (req, res) => {
-    const { ticker, nombre, moneda, tipo_inversion_id } = req.body
+    const { ticker, nombre, moneda, tipo_inversion_id, pais } = req.body
 
     // Validación de entrada
     if (!ticker || !nombre || !moneda || !tipo_inversion_id) {
@@ -247,7 +277,7 @@ export function tickersRouter(db) {
           SELECT rpj_code 
           FROM bvl_companies 
           WHERE stock LIKE ?
-        `).get(`%"${ticker.toUpperCase()}"%`)
+    `).get(` % "${ticker.toUpperCase()}" % `)
 
         if (bvlMatch) {
           rpjCode = bvlMatch.rpj_code
@@ -257,10 +287,10 @@ export function tickersRouter(db) {
         }
       }
 
-      // Insertar ticker con rpj_code si existe
+      // Insertar ticker con rpj_code y pais si existen
       const stmt = db.prepare(`
-        INSERT INTO tickers (ticker, nombre, moneda, tipo_inversion_id, exchange, rpj_code, estado) 
-        VALUES (?, ?, ?, ?, ?, ?, 'activo')
+        INSERT INTO tickers(ticker, nombre, moneda, tipo_inversion_id, exchange, rpj_code, pais, estado)
+  VALUES(?, ?, ?, ?, ?, ?, ?, 'activo')
       `)
       const info = stmt.run(
         ticker.toUpperCase(),
@@ -268,7 +298,8 @@ export function tickersRouter(db) {
         moneda.toUpperCase(),
         tipoInvNum,
         exchange,
-        rpjCode
+        rpjCode,
+        pais || null
       )
 
       const newId = info.lastInsertRowid
@@ -290,9 +321,9 @@ export function tickersRouter(db) {
     if (!precio || !fecha) return res.status(400).json({ error: 'precio y fecha requeridos' })
     const tick = db.prepare('SELECT ticker FROM tickers WHERE id=?').get(id)
     if (!tick) return res.status(404).json({ error: 'not found' })
-    db.prepare(`INSERT INTO precios_historicos (ticker_id, fecha, precio, fuente_api, updated_at)
-      VALUES (?,?,?,?,?)
-      ON CONFLICT(ticker_id, fecha) DO UPDATE SET precio=excluded.precio, fuente_api=excluded.fuente_api, updated_at=excluded.updated_at`
+    db.prepare(`INSERT INTO precios_historicos(ticker_id, fecha, precio, fuente_api, updated_at)
+  VALUES(?,?,?,?,?)
+      ON CONFLICT(ticker_id, fecha) DO UPDATE SET precio = excluded.precio, fuente_api = excluded.fuente_api, updated_at = excluded.updated_at`
     ).run(id, fecha, precio, 'manual', new Date().toISOString())
     res.json({ ok: true })
   })
@@ -347,10 +378,10 @@ export function tickersRouter(db) {
       // Construir mensaje de resultado
       let message = ''
       if (result?.inserted > 0) {
-        message = `Actualizado con ${result.inserted} día(s) vía ${result.source}`
+        message = `Actualizado con ${result.inserted} día(s) vía ${result.source} `
       } else {
         if (expectedDates.length > 0) {
-          message = `Se detectaron ${expectedDates.length} fechas faltantes, pero las APIs no devolvieron datos para este rango (${from} a ${to})`
+          message = `Se detectaron ${expectedDates.length} fechas faltantes, pero las APIs no devolvieron datos para este rango(${from} a ${to})`
         } else {
           message = 'No hay fechas faltantes: los precios ya están actualizados'
         }
@@ -363,10 +394,24 @@ export function tickersRouter(db) {
     }
   })
 
+  r.get('/:id', (req, res) => {
+    const id = Number(req.params.id)
+    const row = db.prepare(`
+      SELECT t.*, ti.nombre as tipo_inversion_nombre, s.nombre as sector_nombre
+      FROM tickers t
+      LEFT JOIN tipos_inversion ti ON t.tipo_inversion_id = ti.id
+      LEFT JOIN sectores s ON t.sector_id = s.id
+      WHERE t.id = ?
+    `).get(id)
+    if (!row) return res.status(404).json({ error: 'not found' })
+    const precio = db.prepare(`SELECT fecha, precio FROM precios_historicos WHERE ticker_id =? ORDER BY fecha DESC LIMIT 1`).get(id)
+    res.json({ ...row, precio })
+  })
+
   r.patch('/:id', (req, res) => {
     const id = Number(req.params.id)
-    const { moneda, tipo_inversion_id } = req.body
-    if (!moneda && !tipo_inversion_id) return res.status(400).json({ error: 'moneda o tipo_inversion_id requeridos' })
+    const { moneda, tipo_inversion_id, pais, sector_id } = req.body
+    if (!moneda && !tipo_inversion_id && pais === undefined && sector_id === undefined) return res.status(400).json({ error: 'nada que actualizar' })
 
     const tick = db.prepare('SELECT * FROM tickers WHERE id=?').get(id)
     if (!tick) return res.status(404).json({ error: 'not found' })
@@ -375,6 +420,12 @@ export function tickersRouter(db) {
     if (tipo_inversion_id) {
       const tipoExists = db.prepare('SELECT id FROM tipos_inversion WHERE id=?').get(tipo_inversion_id)
       if (!tipoExists) return res.status(400).json({ error: 'tipo_inversion_id no existe' })
+    }
+
+    // Verificar sector
+    if (sector_id !== undefined) { // Check for undefined to allow null to be passed
+      const sectorExists = db.prepare('SELECT id FROM sectores WHERE id=?').get(sector_id)
+      if (sector_id !== null && !sectorExists) return res.status(400).json({ error: 'sector_id no existe' })
     }
 
     // Validar moneda
@@ -396,9 +447,19 @@ export function tickersRouter(db) {
         values.push(Number(tipo_inversion_id))
       }
 
+      if (pais !== undefined) {
+        updates.push('pais = ?')
+        values.push(pais)
+      }
+
+      if (sector_id !== undefined) {
+        updates.push('sector_id = ?')
+        values.push(sector_id)
+      }
+
       values.push(id)
 
-      const stmt = db.prepare(`UPDATE tickers SET ${updates.join(', ')} WHERE id = ?`)
+      const stmt = db.prepare(`UPDATE tickers SET ${updates.join(', ')} WHERE id = ? `)
       const info = stmt.run(...values)
       res.json({ ok: true, changes: info.changes })
     } catch (e) {
@@ -427,7 +488,7 @@ export function tickersRouter(db) {
         FROM tickers t
         LEFT JOIN tipos_inversion ti ON t.tipo_inversion_id = ti.id
         WHERE t.id = ?
-      `).get(id)
+    `).get(id)
       if (!ticker) {
         return res.status(404).json({ error: 'Ticker no encontrado' })
       }
@@ -436,7 +497,7 @@ export function tickersRouter(db) {
         SELECT MIN(fecha) as fecha
         FROM inversiones
         WHERE ticker_id = ?
-      `).get(id)
+    `).get(id)
 
       if (!primeraInversion || !primeraInversion.fecha) {
         return res.json({ items: [], meses: [] })
@@ -451,21 +512,21 @@ export function tickersRouter(db) {
       const fechaVistaHasta = fechaFin
 
       const fechasCalculo = db.prepare(`
-        WITH RECURSIVE fechas_dias AS (
-          SELECT DATE(?) as fecha
+        WITH RECURSIVE fechas_dias AS(
+      SELECT DATE(?) as fecha
           UNION ALL
           SELECT DATE(fecha, '+1 day')
           FROM fechas_dias
-          WHERE fecha < DATE(?)
-        )
+          WHERE fecha < DATE(?, '+1 day')
+    )
         SELECT fecha FROM fechas_dias
-      `).all(fechaCalculoInicio, fechaVistaHasta)
+    `).all(fechaCalculoInicio, fechaVistaHasta)
 
       const inversionesTotal = db.prepare(`
         SELECT fecha, SUM(importe) as aportes_total, SUM(cantidad) as cantidad_total
         FROM inversiones
         WHERE ticker_id = ? AND fecha <= ?
-        GROUP BY fecha
+    GROUP BY fecha
       `).all(id, fechaVistaHasta)
 
       const aportesMap = {}
@@ -480,7 +541,7 @@ export function tickersRouter(db) {
         SELECT fecha, precio
         FROM precios_historicos
         WHERE ticker_id = ? AND fecha <= ?
-        ORDER BY fecha
+    ORDER BY fecha
       `).all(id, fechaVistaHasta)
 
       const preciosMap = {}

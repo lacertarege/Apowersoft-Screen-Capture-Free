@@ -9,7 +9,7 @@ import EditarInversionModal from './EditarInversionModal.jsx'
 import { useInvestments } from '../hooks/useInvestments.js'
 import InvestmentChart from './InvestmentChart.jsx'
 
-export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList = [], currentIndex = -1, onNavigateToTicker }) {
+export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList = [], currentIndex = -1, onNavigateToTicker, onEdit }) {
   const [ticker, setTicker] = useState(null)
   const [tickerSummary, setTickerSummary] = useState(null)
   const [inversiones, setInversiones] = useState([])
@@ -408,11 +408,42 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                   </span>
                 )}
               </h3>
-              <div style={{ color: '#6b7280', fontSize: '14px' }}>Moneda: {ticker.moneda}</div>
+              <div style={{ color: '#6b7280', fontSize: '14px', display: 'flex', gap: '16px' }}>
+                <span>Moneda: {ticker.moneda}</span>
+                {ticker.tipo_inversion_nombre && (
+                  <span>Tipo: {ticker.tipo_inversion_nombre}</span>
+                )}
+                {ticker.pais && (
+                  <span>País: {ticker.pais}</span>
+                )}
+                {/* Priorizar sector local, luego BVL */}
+                {(ticker.sector_nombre || bvlData?.sector) && (
+                  <span>Sector: {ticker.sector_nombre || bvlData?.sector}</span>
+                )}
+              </div>
             </div>
 
             {/* Botones de navegación (derecha) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => onEdit && onEdit(ticker)}
+                className="btn"
+                style={{
+                  backgroundColor: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  borderRadius: '4px',
+                  marginRight: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                ✎ Editar Ticker
+              </button>
               <button
                 onClick={onBack}
                 className="btn btn-outline-secondary"
@@ -480,45 +511,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
           {/* Secciones BVL */}
           {ticker.rpj_code && (
             <>
-              {/* Perfil BVL */}
-              {bvlData && (
-                <div className="card" style={{ marginBottom: '20px' }}>
-                  <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>
-                    📊 Perfil BVL
-                  </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Nombre Oficial</div>
-                      <div style={{ fontSize: '14px', fontWeight: '500' }}>{bvlData.name}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Sector</div>
-                      <div style={{ fontSize: '14px', fontWeight: '500' }}>{bvlData.sector}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>RPJ Code</div>
-                      <div style={{ fontSize: '14px', fontWeight: '500', fontFamily: 'monospace' }}>{bvlData.rpjCode}</div>
-                    </div>
-                  </div>
-                  {bvlData.indices && bvlData.indices.length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Índices</div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        {bvlData.indices.map((index, i) => (
-                          <span key={i} style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            backgroundColor: '#f3f4f6',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '4px',
-                            color: '#374151'
-                          }}>{index}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Perfil BVL - Oculto (Sector movido al header) */}
 
               {/* Eventos Corporativos */}
               {bvlEvents.length > 0 && (
@@ -679,6 +672,11 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                   <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
                     <NumberCell value={posicionActual.precioActual} currency={ticker.moneda} />
                   </div>
+                  {tickerSummary?.precio?.fecha && (
+                    <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
+                      al {new Date(tickerSummary.precio.fecha + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Valor de Mercado</div>
@@ -764,15 +762,17 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                 <table>
                   <thead>
                     <tr>
-                      <th>Operación</th>
-                      <th>Fecha</th>
-                      <th>Plataforma</th>
-                      <th style={{ textAlign: 'right' }}>Flujo de Caja</th>
-                      <th style={{ textAlign: 'right' }}>Cantidad (Δ)</th>
-                      <th style={{ textAlign: 'right' }}>Valor Cuota</th>
-                      <th style={{ textAlign: 'right' }}>Ganancia Realizada</th>
-                      <th style={{ textAlign: 'right' }}>Saldo (Unidades)</th>
-                      <th style={{ textAlign: 'center' }}>Acciones</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Operación</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Fecha</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Plataforma</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Exchange</th>
+
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Flujo de Caja</th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Cantidad (Δ)</th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Valor Cuota</th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Ganancia Realizada</th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Saldo (Unidades)</th>
+                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -793,7 +793,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
 
                       return (
                         <tr key={inv.id}>
-                          <td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
                             <span style={{
                               padding: '4px 8px',
                               borderRadius: '4px',
@@ -823,11 +823,14 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                               {esDividendo ? '💰 Dividendo' : (esDesinversion ? (inv.realized_return >= 0 ? '✅ Desinversión' : '⚠️ Desinversión') : '📈 Inversión')}
                             </span>
                           </td>
-                          <td>{fmtDateLima(inv.fecha)}</td>
-                          <td>{inv.plataforma || '-'}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{fmtDateLima(inv.fecha)}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{inv.plataforma || '-'}</td>
+                          <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{inv.exchange_nombre || ticker.exchange || '-'}</td>
+
                           <td style={{
                             textAlign: 'right',
                             fontWeight: '600',
+                            whiteSpace: 'nowrap',
                             color: (esDesinversion || esDividendo) ? '#059669' : '#dc2626'
                           }}>
                             {(esDesinversion || esDividendo) ? '+ ' : '- '}
@@ -836,14 +839,15 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                           <td style={{
                             textAlign: 'right',
                             fontWeight: '500',
+                            whiteSpace: 'nowrap',
                             color: esDividendo ? '#6b7280' : (esDesinversion ? '#dc2626' : '#059669')
                           }}>
                             {esDividendo ? '-' : ((esDesinversion ? '- ' : '+ ') + cantidad.toFixed(4))}
                           </td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                             {esDividendo ? '-' : <NumberCell value={Number(inv.apertura_guardada || 0)} currency={ticker.moneda} />}
                           </td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                             {(esDesinversion || esDividendo) && inv.realized_return !== undefined ? (
                               <span style={{
                                 fontWeight: '600',
@@ -859,11 +863,12 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                             textAlign: 'right',
                             fontWeight: '600',
                             fontSize: '14px',
+                            whiteSpace: 'nowrap',
                             color: '#1e293b'
                           }}>
                             {inv.saldo.toFixed(4)}
                           </td>
-                          <td style={{ textAlign: 'center' }}>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             {!esDividendo && (
                               <>
                                 <button

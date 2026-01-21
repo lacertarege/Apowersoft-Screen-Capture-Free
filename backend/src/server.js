@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import express from 'express' // Touch trigger dispatch
+import express from 'express' // Touch trigger dispatch 2
 import cron from 'node-cron'
 import { createDb } from './setup/db.js'
 import { buildRoutes } from './setup/routes.js'
