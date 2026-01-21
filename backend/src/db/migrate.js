@@ -140,7 +140,6 @@ export default async function migrate(db) {
   // Agregar restricción única para evitar duplicados en inversiones
   db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inversiones_unique ON inversiones(ticker_id, fecha, importe, cantidad, plataforma)`).run()
 
-  // Tabla para almacenar la evolución día a día del portafolio
   db.prepare(`CREATE TABLE IF NOT EXISTS portfolio_evolucion_diaria (
     fecha TEXT NOT NULL PRIMARY KEY,
     inversion_usd NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -150,4 +149,58 @@ export default async function migrate(db) {
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`).run()
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_portfolio_evolucion_fecha ON portfolio_evolucion_diaria(fecha)`).run()
+
+  // Tabla para gestión inteligente de cache
+  db.prepare(`CREATE TABLE IF NOT EXISTS cache_metadata (
+    cache_name TEXT PRIMARY KEY,
+    last_invalidated_at TEXT NOT NULL,
+    last_rebuilt_at TEXT,
+    invalidation_reason TEXT
+  )`).run()
+
+  // Inicializar metadata de cache si no existe
+  db.prepare(`
+    INSERT OR IGNORE INTO cache_metadata (cache_name, last_invalidated_at)
+    VALUES ('portfolio_evolucion_diaria', datetime('now'))
+  `).run()
+
+  // Tabla de plataformas de inversión
+  db.prepare(`CREATE TABLE IF NOT EXISTS plataformas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL UNIQUE,
+    exchange TEXT,
+    moneda_principal TEXT DEFAULT 'USD',
+    pais TEXT,
+    url TEXT,
+    activo INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run()
+
+  // Seed plataformas desde datos existentes si la tabla está vacía
+  const countPlat = db.prepare('SELECT COUNT(*) as cnt FROM plataformas').get()
+  if (countPlat.cnt === 0) {
+    // Extraer plataformas únicas de inversiones
+    const existingPlatforms = db.prepare(`
+      SELECT DISTINCT plataforma FROM inversiones 
+      WHERE plataforma IS NOT NULL AND plataforma != ''
+    `).all()
+
+    const insertPlat = db.prepare(`
+      INSERT OR IGNORE INTO plataformas (nombre, exchange) VALUES (?, ?)
+    `)
+
+    // Mapeo inicial de plataformas conocidas
+    const platformDefaults = {
+      'Tyba': { exchange: 'BVL', pais: 'PE' },
+      'Trii': { exchange: 'BVL', pais: 'PE' },
+      'Interactive Brokers': { exchange: 'NYSE/NASDAQ', pais: 'US' },
+      'IBKR': { exchange: 'NYSE/NASDAQ', pais: 'US' },
+      'Renta4': { exchange: 'BVL', pais: 'PE' }
+    }
+
+    for (const row of existingPlatforms) {
+      const defaults = platformDefaults[row.plataforma] || {}
+      insertPlat.run(row.plataforma, defaults.exchange || null)
+    }
+  }
 }

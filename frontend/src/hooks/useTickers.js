@@ -6,11 +6,11 @@ export function useTickers() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const fetchTickers = useCallback(async (query = '', page = 1, pageSize = 100) => {
+  const fetchTickers = useCallback(async (query = '', page = 1, pageSize = 100, includeHistory = false) => {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`${API}/tickers?q=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`)
+      const response = await fetch(`${API}/tickers?q=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}&includeHistory=${includeHistory}`)
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
       }
@@ -35,12 +35,12 @@ export function useTickers() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tickerData)
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
-      
+
       const data = await response.json()
       await fetchTickers() // Recargar lista
       return data
@@ -61,12 +61,12 @@ export function useTickers() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
-      
+
       const data = await response.json()
       await fetchTickers() // Recargar lista
       return data
@@ -85,12 +85,12 @@ export function useTickers() {
       const response = await fetch(`${API}/tickers/${id}`, {
         method: 'DELETE'
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
-      
+
       await fetchTickers() // Recargar lista
     } catch (err) {
       setError(err.message)
@@ -107,12 +107,12 @@ export function useTickers() {
       const response = await fetch(`${API}/tickers/${id}/refresh`, {
         method: 'POST'
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
-      
+
       const data = await response.json()
       await fetchTickers() // Recargar lista
       return data

@@ -82,10 +82,13 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
   const posicionActual = useMemo(() => {
     // Ordenar cronológicamente (ASC) para cálculo iterativo
     // Nota: 'inversiones' viene normalmente en DESC (más reciente primero)
+    // Usamos ID como desempate para transacciones en el mismo día
     const sortedInv = [...inversiones].sort((a, b) => {
       const da = new Date(a.fecha)
       const db = new Date(b.fecha)
-      return da - db
+      if (da.getTime() !== db.getTime()) return da - db
+      // Mismo día: ordenar por ID (menor ID = más antigua)
+      return (a.id || 0) - (b.id || 0)
     })
 
     let currentQty = 0
@@ -141,8 +144,9 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
     }
 
     // Valores Finales
-    const cantidadActual = currentQty
-    const cpp = currentCpp
+    // Corregir errores de precisión de punto flotante: si qty < 0.01, considerar como 0
+    const cantidadActual = Math.abs(currentQty) < 0.01 ? 0 : currentQty
+    const cpp = cantidadActual === 0 ? 0 : currentCpp
 
     // Capital Total Invertido = Cantidad Restante * CPP Actual
     const capitalInvertido = cantidadActual * cpp
@@ -207,8 +211,13 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
 
   // Inversiones con saldo acumulativo (desde la más antigua a la más reciente)
   const inversionesConSaldo = useMemo(() => {
-    // Invertir el orden para calcular desde la más antigua
-    const inversionesOrdenadas = [...inversiones].reverse()
+    // Ordenar cronológicamente ASC (más antigua primero) con ID como desempate
+    const inversionesOrdenadas = [...inversiones].sort((a, b) => {
+      const da = new Date(a.fecha)
+      const db = new Date(b.fecha)
+      if (da.getTime() !== db.getTime()) return da - db
+      return (a.id || 0) - (b.id || 0)
+    })
 
     let saldoAcum = 0
 

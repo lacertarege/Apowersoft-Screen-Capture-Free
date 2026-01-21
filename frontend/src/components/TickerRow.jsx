@@ -54,14 +54,12 @@ export function TickerRow({
     ? ticker.importe_total / ticker.cantidad_total
     : 0
 
-  // Dividends
+  // Dividends (for display in tooltip only)
   const totalDividends = Number(ticker.total_dividends || 0)
 
-  // Capital Gain (Value - Investment)
-  const capitalGain = Number(ticker.rendimiento || 0); // This comes from view: (price * qty) - investment
-
-  // Total Return (Capital Gain + Dividends)
-  const totalReturn = capitalGain + totalDividends
+  // Total Return - Backend already calculates: unrealizedGain + realizedGain + dividends
+  // Do NOT add dividends again here!
+  const totalReturn = Number(ticker.rendimiento || 0)
 
   // Total ROI %
   const invested = Number(ticker.importe_total || 0)
@@ -72,11 +70,14 @@ export function TickerRow({
   const rentabilidadSign = totalReturn >= 0 ? '+' : ''
   const rentabilidadText = `${rentabilidadSign}${fmtCurr(totalReturn, ticker.moneda)} (${rentabilidadSign}${fmtPct(totalRoi)})`
 
-  // Tooltip content
-  const tooltipContent = `Inversión Inicial: ${fmtCurr(invested, ticker.moneda)}
-Costo Promedio: ${fmtCurr(costoPromedio, ticker.moneda)}
-Ganancia Capital: ${fmtCurr(capitalGain, ticker.moneda)}
+  // Calculate unrealized gain for tooltip (Value - Investment Cost)
+  const unrealizedGain = (Number(ticker.balance || 0)) - invested
+
+  // Tooltip content - show breakdown
+  const tooltipContent = `Capital Invertido: ${fmtCurr(invested, ticker.moneda)}
+Ganancia No Realizada: ${fmtCurr(unrealizedGain, ticker.moneda)}
 Dividendos: ${fmtCurr(totalDividends, ticker.moneda)}
+─────────────────
 Retorno Total: ${fmtCurr(totalReturn, ticker.moneda)}`
 
   return (
