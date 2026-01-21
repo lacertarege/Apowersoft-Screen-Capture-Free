@@ -51,12 +51,18 @@ export default function Dashboard() {
   const [investmentProfitabilityData, setInvestmentProfitabilityData] = useState([])
   const [dividendsDual, setDividendsDual] = useState([])
 
+<<<<<<< HEAD
   // 6. Sectores (Pie)
   const [currencySector, setCurrencySector] = useState('USD')
   const [sectorData, setSectorData] = useState([])
 
 
 
+=======
+
+
+
+>>>>>>> 3644291da94959be2775241c5b2aa23294e94d25
 
   // Resumen Anual
   const [annualEvolutionData, setAnnualEvolutionData] = useState([])

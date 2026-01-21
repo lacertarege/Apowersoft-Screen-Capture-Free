@@ -11,7 +11,6 @@ import { tiposInversionRouter } from '../routes/tiposInversion.js'
 import { bvlRouter } from '../routes/bvl.js'
 import { plataformasRouter } from '../routes/plataformas.js'
 import { exchangesRouter } from '../routes/exchanges.js'
-
 import { sectoresRouter } from '../routes/sectores.js'
 
 export function buildRoutes(app, db) {

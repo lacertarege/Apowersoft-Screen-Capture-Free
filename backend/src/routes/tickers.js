@@ -90,7 +90,7 @@ export function tickersRouter(db) {
       ? processedRows
       : processedRows.filter(row => row.cantidad_total > 0.000001)
 
-    const total = db.prepare(`SELECT COUNT(*) as c FROM v_resumen_empresas v WHERE v.ticker LIKE ? OR v.nombre LIKE ? `).get(` % ${q}% `, ` % ${q}% `).c
+    const total = db.prepare(`SELECT COUNT(*) as c FROM v_resumen_empresas v WHERE v.ticker LIKE ? OR v.nombre LIKE ?`).get(`%${q}%`, `%${q}%`).c
     res.json({ items: filteredRows, total })
   })
 

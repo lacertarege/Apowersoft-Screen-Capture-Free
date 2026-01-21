@@ -9,7 +9,6 @@ import TiposInversionView from './TiposInversionView.jsx'
 import PlataformasView from './PlataformasView.jsx'
 
 import SectoresView from './SectoresView.jsx'
-
 export default function App() {
   const [route, setRoute] = useState('empresas')
 
