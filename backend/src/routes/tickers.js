@@ -217,7 +217,7 @@ export function tickersRouter(db) {
   })
 
   r.post('/', (req, res) => {
-    const { ticker, nombre, moneda, tipo_inversion_id, pais } = req.body
+    const { ticker, nombre, moneda, tipo_inversion_id, pais, sector_id } = req.body
 
     // Validación de entrada
     if (!ticker || !nombre || !moneda || !tipo_inversion_id) {
@@ -289,8 +289,8 @@ export function tickersRouter(db) {
 
       // Insertar ticker con rpj_code y pais si existen
       const stmt = db.prepare(`
-        INSERT INTO tickers(ticker, nombre, moneda, tipo_inversion_id, exchange, rpj_code, pais, estado)
-  VALUES(?, ?, ?, ?, ?, ?, ?, 'activo')
+        INSERT INTO tickers(ticker, nombre, moneda, tipo_inversion_id, exchange, rpj_code, pais, sector_id, estado)
+  VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'activo')
       `)
       const info = stmt.run(
         ticker.toUpperCase(),
@@ -299,7 +299,8 @@ export function tickersRouter(db) {
         tipoInvNum,
         exchange,
         rpjCode,
-        pais || null
+        pais || null,
+        sector_id || null
       )
 
       const newId = info.lastInsertRowid
