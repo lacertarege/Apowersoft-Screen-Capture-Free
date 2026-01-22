@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { API } from './config'
 import BarChart from './BarChart.jsx'
 import DualAxisLineChart from './DualAxisLineChart.jsx'
@@ -26,7 +26,7 @@ export default function Dashboard() {
   const [tipoCambio, setTipoCambio] = useState(null)
   const [dashboardInfo, setDashboardInfo] = useState(null)
 
-  // 1. Inversión vs Valor
+  // 1. InversiÃ³n vs Valor
   const [rangeAB, setRangeAB] = useState('all')
   const [currencyAB, setCurrencyAB] = useState('USD')
   const [dataAB, setDataAB] = useState([])
@@ -45,24 +45,19 @@ export default function Dashboard() {
   const [currencyType, setCurrencyType] = useState('USD')
   const [typeData, setTypeData] = useState([])
 
-  // 5. Dual Axis (Inversión vs Rentabilidad)
+  // 5. Dual Axis (InversiÃ³n vs Rentabilidad)
   const [rangeDual, setRangeDual] = useState('all')
   const [currencyDual, setCurrencyDual] = useState('USD')
   const [investmentProfitabilityData, setInvestmentProfitabilityData] = useState([])
   const [dividendsDual, setDividendsDual] = useState([])
 
-<<<<<<< HEAD
+
   // 6. Sectores (Pie)
   const [currencySector, setCurrencySector] = useState('USD')
   const [sectorData, setSectorData] = useState([])
 
 
 
-=======
-
-
-
->>>>>>> 3644291da94959be2775241c5b2aa23294e94d25
 
   // Resumen Anual
   const [annualEvolutionData, setAnnualEvolutionData] = useState([])
@@ -257,7 +252,7 @@ export default function Dashboard() {
           {/* Invertido Legend */}
           <g transform={`translate(0, 0)`}>
             <line x1="0" y1="0" x2="20" y2="0" stroke="#000000" strokeWidth="1.25" strokeDasharray="4,4" />
-            <text x="25" y="4" fontSize="11" fill="#374151">Inversión</text>
+            <text x="25" y="4" fontSize="11" fill="#374151">InversiÃ³n</text>
           </g>
           {/* Valor Legend */}
           <g transform={`translate(140, 0)`}>
@@ -323,14 +318,14 @@ export default function Dashboard() {
                   {series.map((s, idx) => (
                     <g key={`tooltip-${idx}`}>
                       <circle cx={finalX + 10} cy={finalY + 35 + idx * 22} r="1.5" fill={s.name === 'Invertido' ? '#000000' : s.color} />
-                      <text x={finalX + 20} y={finalY + 39 + idx * 22} fontSize="11" fill="#4b5563">{s.name === 'Invertido' ? 'Inversión' : s.name}:</text>
+                      <text x={finalX + 20} y={finalY + 39 + idx * 22} fontSize="11" fill="#4b5563">{s.name === 'Invertido' ? 'InversiÃ³n' : s.name}:</text>
                       <text x={finalX + tooltipWidth - 10} y={finalY + 39 + idx * 22} textAnchor="end" fontSize="11" fill="#111827" fontWeight="700">{formatFullValue(s.points[hoverPoint].y)}</text>
                     </g>
                   ))}
 
                   {divOnDate && (
                     <g transform={`translate(0, ${series.length * 22 + 5})`}>
-                      <text x={finalX + 10} y={finalY + 35} fontSize="11" fill="#a855f7" fontWeight="600">💰 Dividendos:</text>
+                      <text x={finalX + 10} y={finalY + 35} fontSize="11" fill="#a855f7" fontWeight="600">ðŸ’° Dividendos:</text>
                       <text x={finalX + tooltipWidth - 10} y={finalY + 35} textAnchor="end" fontSize="11" fill="#a855f7" fontWeight="700">{formatFullValue(divOnDate.amount)}</text>
                     </g>
                   )}
