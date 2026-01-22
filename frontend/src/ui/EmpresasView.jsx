@@ -333,7 +333,7 @@ export default function EmpresasView() {
         )
       })()}
 
-      <TickerModal open={showNew} onClose={() => setShowNew(false)} onSave={onSaveTicker} tipos={tipos} defaultMoneda={activeTab} />
+      <TickerModal open={showNew} onClose={() => setShowNew(false)} onSave={onSaveTicker} tipos={tipos} sectores={sectores} defaultMoneda={activeTab} />
       <NuevaInversionModal open={investOpen} onClose={() => setInvestOpen(false)} onSave={onSaveInvest} empresa={empresa} />
       <NuevaDesinversionModal open={desinvestOpen} onClose={() => setDesinvestOpen(false)} onSave={onSaveDesinvest} empresa={empresa} />
       <EditTickerModal open={editOpen} onClose={() => { setEditOpen(false); setEditItem(null) }} onSave={onEditTickerSave} item={editItem} tipos={tipos} sectores={sectores} />

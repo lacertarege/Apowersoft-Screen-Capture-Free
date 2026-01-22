@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { API } from './config'
 
-export default function TickerModal({ open, onClose, onSave, tipos = [], defaultMoneda = 'USD' }) {
+export default function TickerModal({ open, onClose, onSave, tipos = [], sectores = [], defaultMoneda = 'USD' }) {
   const [ticker, setTicker] = useState('')
   const [nombre, setNombre] = useState('')
   const [moneda, setMoneda] = useState(defaultMoneda)
   const [tipoInversionId, setTipoInversionId] = useState('')
   const [pais, setPais] = useState('')
+  const [sectorId, setSectorId] = useState('')
 
   // Lista de países comunes
   const countries = [
@@ -28,6 +29,7 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
       setNombre('')
       setMoneda(defaultMoneda)
       setPais('')
+      setSectorId('')
       setSearchQuery('')
       setSearchResults([])
       setShowSearchResults(false)
@@ -66,6 +68,7 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
     setMoneda(company.moneda || 'USD')
     // Resetear país al seleccionar de búsqueda (podría inferirse si tuviéramos ISIN aquí, pero por ahora manual)
     setPais('')
+    setSectorId('')
     setSearchQuery('')
     setSearchResults([])
     setShowSearchResults(false)
@@ -115,7 +118,8 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
       nombre: nombre.trim(),
       moneda,
       tipo_inversion_id: Number(tipoInversionId),
-      pais: pais || null
+      pais: pais || null,
+      sector_id: sectorId ? Number(sectorId) : null
     })
   }
 
@@ -341,7 +345,10 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                 </div>
               </div>
 
-              {/* País */}
+            </div>
+
+            {/* País y Sector en grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>País</label>
                 <div style={{ position: 'relative' }}>
@@ -357,36 +364,50 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], default
                   </select>
                 </div>
               </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '13px', marginBottom: 'var(--space-xs)' }}>Sector</label>
+                <select
+                  value={sectorId}
+                  onChange={e => setSectorId(e.target.value)}
+                  style={{ padding: '8px 12px', fontSize: '14px', width: '100%' }}
+                >
+                  <option value="">-- Seleccionar --</option>
+                  {sectores.map(s => (
+                    <option key={s.id} value={String(s.id)} title={s.descripcion}>{s.nombre}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Footer */}
-        <div className="modal-footer">
-          <button
-            onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              minWidth: '90px',
-              fontSize: '14px'
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="btn-primary"
-            style={{
-              padding: '10px 20px',
-              minWidth: '110px',
-              fontSize: '14px'
-            }}
-          >
-            Agregar Empresa
-          </button>
-        </div>
+      {/* Footer */}
+      <div className="modal-footer">
+        <button
+          onClick={onClose}
+          style={{
+            padding: '10px 20px',
+            minWidth: '90px',
+            fontSize: '14px'
+          }}
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={!canSave}
+          className="btn-primary"
+          style={{
+            padding: '10px 20px',
+            minWidth: '110px',
+            fontSize: '14px'
+          }}
+        >
+          Agregar Empresa
+        </button>
       </div>
     </div>
+    </div >
   )
 }
