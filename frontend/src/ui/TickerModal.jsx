@@ -380,34 +380,33 @@ export default function TickerModal({ open, onClose, onSave, tipos = [], sectore
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="modal-footer">
-        <button
-          onClick={onClose}
-          style={{
-            padding: '10px 20px',
-            minWidth: '90px',
-            fontSize: '14px'
-          }}
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={!canSave}
-          className="btn-primary"
-          style={{
-            padding: '10px 20px',
-            minWidth: '110px',
-            fontSize: '14px'
-          }}
-        >
-          Agregar Empresa
-        </button>
+        {/* Footer */}
+        <div className="modal-footer">
+          <button
+            onClick={onClose}
+            style={{
+              padding: '10px 20px',
+              minWidth: '90px',
+              fontSize: '14px'
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className="btn-primary"
+            style={{
+              padding: '10px 20px',
+              minWidth: '110px',
+              fontSize: '14px'
+            }}
+          >
+            Agregar Empresa
+          </button>
+        </div>
       </div>
     </div>
-    </div >
   )
 }
