@@ -511,7 +511,32 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
           {/* Secciones BVL */}
           {ticker.rpj_code && (
             <>
-              {/* Perfil BVL - Oculto (Sector movido al header) */}
+              {/* Perfil BVL - Restaurado */}
+              <div className="card" style={{ marginBottom: '20px' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>
+                  🏢 Perfil de la Empresa
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                  {bvlData?.sector && (
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>Sector</div>
+                      <div style={{ fontWeight: '500' }}>{bvlData.sector}</div>
+                    </div>
+                  )}
+                  {bvlData?.indices && bvlData.indices.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>Índices</div>
+                      <div style={{ fontWeight: '500', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {bvlData.indices.map((idx, i) => (
+                          <span key={i} style={{ backgroundColor: '#f3f4f6', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>
+                            {idx}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Eventos Corporativos */}
               {bvlEvents.length > 0 && (
