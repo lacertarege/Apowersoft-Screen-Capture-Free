@@ -181,7 +181,7 @@ export default function InvestmentChart({
   }, [inversiones, historicos, posicionActual])
 
   // State para el rango de fechas
-  const [timeRange, setTimeRange] = useState('ALL')
+  const [timeRange, setTimeRange] = useState('YTD')
 
   // Filtrar datos según el rango seleccionado
   const chartData = useMemo(() => {
