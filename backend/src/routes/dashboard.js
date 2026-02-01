@@ -286,6 +286,88 @@ export function dashboardRouter(db) {
     res.json({ items: data })
   })
 
+  // 4c. /portfolio-heatmap (Treemap)
+  r.get('/portfolio-heatmap', (req, res) => {
+    try {
+      // 1. Get latest FX
+      const fx = db.prepare('SELECT usd_pen FROM tipos_cambio ORDER BY fecha DESC LIMIT 1').get()
+      const usdPen = fx ? fx.usd_pen : 3.75
+
+      // 2. Get all active positions with Sector and Ticker info
+      const positions = db.prepare(`
+        SELECT 
+          t.ticker,
+          t.moneda,
+          COALESCE(s.nombre, 'Otros') as sector,
+          SUM(CASE WHEN i.tipo_operacion = 'INVERSION' THEN i.cantidad WHEN i.tipo_operacion = 'DESINVERSION' THEN -i.cantidad ELSE 0 END) as qty,
+          SUM(CASE WHEN i.tipo_operacion = 'INVERSION' THEN i.importe WHEN i.tipo_operacion = 'DESINVERSION' THEN -(i.importe - COALESCE(i.realized_return, 0)) ELSE 0 END) as invested_capital
+        FROM inversiones i
+        JOIN tickers t ON t.id = i.ticker_id
+        LEFT JOIN sectores s ON t.sector_id = s.id
+        GROUP BY t.id
+        HAVING qty > 0.0001
+      `).all()
+
+      // 3. Enrich with current price and Calculate USD values
+      const items = positions.map(p => {
+        // Fetch latest price
+        const priceRow = db.prepare('SELECT precio FROM precios_historicos WHERE ticker_id = (SELECT id FROM tickers WHERE ticker = ?) ORDER BY fecha DESC LIMIT 1').get(p.ticker)
+        const price = priceRow ? priceRow.precio : 0
+
+        // Determine FX rate for this ticker
+        const rate = p.moneda === 'PEN' ? usdPen : 1
+
+        // Convert to USD
+        // Market Value USD = Qty * Price / Rate (if PEN, price is in PEN, so divide by Rate? No. 
+        // If Moneda is PEN, Price is in PEN. To get USD, we divide by USD/PEN rate.
+        // Wait, standard convention: USD/PEN = 3.75 (1 USD = 3.75 PEN).
+        // So 100 PEN = 100 / 3.75 USD. Correct.
+
+        const marketValueUsd = (p.qty * price) / rate
+        const investedCapitalUsd = p.invested_capital / rate
+
+        const gainUsd = marketValueUsd - investedCapitalUsd
+        const gainPercent = investedCapitalUsd !== 0 ? (gainUsd / investedCapitalUsd) * 100 : 0
+
+        return {
+          ticker: p.ticker,
+          sector: p.sector,
+          value: marketValueUsd,
+          performance: gainPercent,
+          price: price,
+          change: 0 // Optional: Daily change if needed, but we use Total Return
+        }
+      })
+
+      // 4. Group by Sector
+      const tree = {}
+      items.forEach(item => {
+        if (!tree[item.sector]) {
+          tree[item.sector] = { name: item.sector, value: 0, children: [] }
+        }
+        tree[item.sector].value += item.value
+        tree[item.sector].children.push({
+          name: item.ticker,
+          value: item.value,
+          performance: item.performance,
+          price: item.price
+        })
+      })
+
+      // Convert map to array and sort
+      const result = Object.values(tree).sort((a, b) => b.value - a.value).map(sector => {
+        sector.children.sort((a, b) => b.value - a.value)
+        return sector
+      })
+
+      res.json(result)
+
+    } catch (e) {
+      console.error(e)
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // 5. /investment-vs-profitability
   r.get('/investment-vs-profitability', async (req, res) => {
     try {

@@ -7,6 +7,7 @@ import DualAxisLineChart from './DualAxisLineChart.jsx'
 import AnnualSummaryTable from './AnnualSummaryTable.jsx'
 import AnnualBarChart from './AnnualBarChart.jsx'
 import PieChart from './PieChart.jsx'
+import TreemapChart from './TreemapChart.jsx'
 
 const ChartControls = ({ range, setRange, currency, setCurrency, showRange = true }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -26,14 +27,14 @@ export default function Dashboard() {
   const [tipoCambio, setTipoCambio] = useState(null)
   const [dashboardInfo, setDashboardInfo] = useState(null)
 
-  // 1. InversiÃ³n vs Valor
-  const [rangeAB, setRangeAB] = useState('all')
+  // 1. Inversión vs Valor
+  const [rangeAB, setRangeAB] = useState('ytd')
   const [currencyAB, setCurrencyAB] = useState('USD')
   const [dataAB, setDataAB] = useState([])
   const [dividendsAB, setDividendsAB] = useState([])
 
   // 2. Rendimiento
-  const [rangeR, setRangeR] = useState('all')
+  const [rangeR, setRangeR] = useState('ytd')
   const [currencyR, setCurrencyR] = useState('USD')
   const [dataR, setDataR] = useState([])
 
@@ -45,8 +46,8 @@ export default function Dashboard() {
   const [currencyType, setCurrencyType] = useState('USD')
   const [typeData, setTypeData] = useState([])
 
-  // 5. Dual Axis (InversiÃ³n vs Rentabilidad)
-  const [rangeDual, setRangeDual] = useState('all')
+  // 5. Dual Axis (Inversión vs Rentabilidad)
+  const [rangeDual, setRangeDual] = useState('ytd')
   const [currencyDual, setCurrencyDual] = useState('USD')
   const [investmentProfitabilityData, setInvestmentProfitabilityData] = useState([])
   const [dividendsDual, setDividendsDual] = useState([])
@@ -55,6 +56,13 @@ export default function Dashboard() {
   // 6. Sectores (Pie)
   const [currencySector, setCurrencySector] = useState('USD')
   const [sectorData, setSectorData] = useState([])
+
+  // 7. Heatmap
+  const [heatmapData, setHeatmapData] = useState([])
+
+  useEffect(() => {
+    fetch(`${API}/dashboard/portfolio-heatmap`).then(r => r.json()).then(d => setHeatmapData(d)).catch(console.error)
+  }, [])
 
 
 
@@ -252,7 +260,7 @@ export default function Dashboard() {
           {/* Invertido Legend */}
           <g transform={`translate(0, 0)`}>
             <line x1="0" y1="0" x2="20" y2="0" stroke="#000000" strokeWidth="1.25" strokeDasharray="4,4" />
-            <text x="25" y="4" fontSize="11" fill="#374151">InversiÃ³n</text>
+            <text x="25" y="4" fontSize="11" fill="#374151">Monto invertido</text>
           </g>
           {/* Valor Legend */}
           <g transform={`translate(140, 0)`}>
@@ -477,6 +485,17 @@ export default function Dashboard() {
         </div>
         <ChartControls showRange={false} currency={currencyType} setCurrency={setCurrencyType} />
         <BarChart data={typeData} currency={currencyType} />
+      </div>
+
+      {/* 8. Portfolio Heatmap */}
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="flex-between">
+          <h3 className="card-title">Composición del Portafolio (Heatmap)</h3>
+          <div className="text-muted">Tamaño por Valor (USD), Color por Rendimiento No Realizado</div>
+        </div>
+        <div style={{ marginTop: 12, overflowX: 'auto' }}>
+          <TreemapChart data={heatmapData} width={1000} height={500} />
+        </div>
       </div>
 
 
