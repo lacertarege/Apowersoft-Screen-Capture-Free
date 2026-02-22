@@ -216,6 +216,8 @@ export default function EmpresasView() {
     setEditItem(it); setEditOpen(true)
   }
 
+  const [lastUpdate, setLastUpdate] = useState(Date.now())
+
   async function onEditTickerSave(payload) {
     if (!editItem) return
     try {
@@ -223,6 +225,7 @@ export default function EmpresasView() {
       setEditOpen(false)
       setEditItem(null)
       await fetchTickers() // Recargar para ver los cambios
+      setLastUpdate(Date.now()) // Forzar recarga en DetalleTicker
     } catch (err) {
       alert(`Error al editar: ${err.message}`)
     }
@@ -258,6 +261,7 @@ export default function EmpresasView() {
           currentIndex={currentIndex}
           onNavigateToTicker={handleNavigateToTicker}
           onEdit={onEditTickerOpen}
+          lastUpdated={lastUpdate}
         />
         <EditTickerModal open={editOpen} onClose={() => { setEditOpen(false); setEditItem(null) }} onSave={onEditTickerSave} item={editItem} tipos={tipos} sectores={sectores} />
       </>

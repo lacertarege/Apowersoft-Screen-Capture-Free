@@ -9,7 +9,7 @@ import EditarInversionModal from './EditarInversionModal.jsx'
 import { useInvestments } from '../hooks/useInvestments.js'
 import InvestmentChart from './InvestmentChart.jsx'
 
-export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList = [], currentIndex = -1, onNavigateToTicker, onEdit }) {
+export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList = [], currentIndex = -1, onNavigateToTicker, onEdit, lastUpdated }) {
   const [ticker, setTicker] = useState(null)
   const [tickerSummary, setTickerSummary] = useState(null)
   const [inversiones, setInversiones] = useState([])
@@ -55,7 +55,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
       setLoading(true)
       try {
         // Cargar datos del ticker y sus inversiones en paralelo
-        const t = await fetch(`${API}/tickers/${tickerId}`).then(r => r.json())
+        const t = await fetch(`${API}/tickers/${tickerId}?ts=${Date.now()}`).then(r => r.json())
         const inv = await getInvestments(tickerId)
 
         if (!cancelled) {
@@ -76,7 +76,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
     }
     load()
     return () => { cancelled = true }
-  }, [tickerId])
+  }, [tickerId, lastUpdated])
 
   // Cálculos de posición actual
   const posicionActual = useMemo(() => {
@@ -416,9 +416,9 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
                 {ticker.pais && (
                   <span>País: {ticker.pais}</span>
                 )}
-                {/* Priorizar sector local, luego BVL */}
-                {(ticker.sector_nombre || bvlData?.sector) && (
-                  <span>Sector: {ticker.sector_nombre || bvlData?.sector}</span>
+                {/* Sector desde BD local (tabla tickers) */}
+                {ticker.sector_nombre && (
+                  <span>Sector: {ticker.sector_nombre}</span>
                 )}
               </div>
             </div>
@@ -511,32 +511,7 @@ export default function DetalleTicker({ tickerId, onBack, onChanged, tickersList
           {/* Secciones BVL */}
           {ticker.rpj_code && (
             <>
-              {/* Perfil BVL - Restaurado */}
-              <div className="card" style={{ marginBottom: '20px' }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>
-                  🏢 Perfil de la Empresa
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                  {bvlData?.sector && (
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>Sector</div>
-                      <div style={{ fontWeight: '500' }}>{bvlData.sector}</div>
-                    </div>
-                  )}
-                  {bvlData?.indices && bvlData.indices.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>Índices</div>
-                      <div style={{ fontWeight: '500', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {bvlData.indices.map((idx, i) => (
-                          <span key={i} style={{ backgroundColor: '#f3f4f6', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>
-                            {idx}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+
 
               {/* Eventos Corporativos */}
               {bvlEvents.length > 0 && (

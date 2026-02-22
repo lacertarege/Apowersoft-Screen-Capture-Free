@@ -41,6 +41,7 @@ export function tickersRouter(db) {
         v.precio_reciente,
         (SELECT pais FROM tickers WHERE id = v.id) as pais,
         (SELECT s.nombre FROM sectores s JOIN tickers t ON t.sector_id = s.id WHERE t.id = v.id) as sector_nombre,
+        (SELECT sector_id FROM tickers WHERE id = v.id) as sector_id,
         (SELECT COALESCE(SUM(monto), 0) FROM dividendos WHERE ticker_id = v.id) as total_dividends
       FROM v_resumen_empresas v
       WHERE v.ticker LIKE ? OR v.nombre LIKE ?
@@ -97,9 +98,10 @@ export function tickersRouter(db) {
   r.get('/:id', (req, res) => {
     const id = Number(req.params.id)
     const row = db.prepare(`
-      SELECT t.*, ti.nombre as tipo_inversion_nombre
+      SELECT t.*, ti.nombre as tipo_inversion_nombre, s.nombre as sector_nombre
       FROM tickers t
       LEFT JOIN tipos_inversion ti ON t.tipo_inversion_id = ti.id
+      LEFT JOIN sectores s ON t.sector_id = s.id
       WHERE t.id = ?
     `).get(id)
     if (!row) return res.status(404).json({ error: 'not found' })
